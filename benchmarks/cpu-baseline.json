@@ -1,0 +1,185 @@
+{
+  "date": "2026-10-10",
+  "hardware": "Apple M4 Pro, 14 CPU cores, 48GB unified memory",
+  "backend": "cpu",
+  "cpu_threads": 2,
+  "limitations": [
+    "Six warm samples per model; exploratory results, not production percentiles.",
+    "Tiny-SD ran while SD-Turbo weights were downloading/loading; background activity was not controlled.",
+    "GPU was unavailable in the tool process; no GPU performance measured.",
+    "Sampled process RSS is not total device memory.",
+    "Same prompt/seed/resolution; model-specific steps and guidance differ."
+  ],
+  "models": [
+    {
+      "model": "tiny-sd",
+      "profile": {
+        "model": "segmind/tiny-sd",
+        "revision": "cad0bd7495fa6c4bcca01b19a723dc91627fe84f",
+        "steps": 12,
+        "size": 256,
+        "guidance": 7.5,
+        "safetensors": false
+      },
+      "size": 512,
+      "steps": 12,
+      "cpu_threads": 2,
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "machine": "arm64",
+      "torch": "2.14.1",
+      "runs": [
+        {
+          "id": "cat-bicycle",
+          "category": "simple illustration",
+          "prompt": "A cute orange cat riding a tiny blue bicycle, whimsical cartoon illustration, sunny park",
+          "seed": 42,
+          "seconds": 16.997,
+          "image": "cat-bicycle-42.png"
+        },
+        {
+          "id": "cat-bicycle",
+          "category": "simple illustration",
+          "prompt": "A cute orange cat riding a tiny blue bicycle, whimsical cartoon illustration, sunny park",
+          "seed": 43,
+          "seconds": 16.939,
+          "image": "cat-bicycle-43.png"
+        },
+        {
+          "id": "product",
+          "category": "product photo",
+          "prompt": "Studio product photograph of a white ceramic coffee mug on a pale green background, soft natural lighting, clear silhouette, no text",
+          "seed": 42,
+          "seconds": 16.511,
+          "image": "product-42.png"
+        },
+        {
+          "id": "product",
+          "category": "product photo",
+          "prompt": "Studio product photograph of a white ceramic coffee mug on a pale green background, soft natural lighting, clear silhouette, no text",
+          "seed": 43,
+          "seconds": 16.08,
+          "image": "product-43.png"
+        },
+        {
+          "id": "relations",
+          "category": "spatial relationships",
+          "prompt": "A red cube to the left of a blue sphere on a white table, clean minimalist illustration",
+          "seed": 42,
+          "seconds": 17.454,
+          "image": "relations-42.png"
+        },
+        {
+          "id": "relations",
+          "category": "spatial relationships",
+          "prompt": "A red cube to the left of a blue sphere on a white table, clean minimalist illustration",
+          "seed": 43,
+          "seconds": 16.167,
+          "image": "relations-43.png"
+        }
+      ],
+      "scope": "Local generation only; excludes agent planning, queue, transfers and phone finalization",
+      "memory_note": "Sampled process RSS, not total GPU memory or a hard memory cap",
+      "quality_note": "Images require human review; no automated quality score is claimed",
+      "backend": "cpu",
+      "load_seconds": 3.451,
+      "safety_checker_present": false,
+      "first_inference_seconds": 17.128,
+      "summary": {
+        "samples": 6,
+        "median_seconds": 16.725,
+        "min_seconds": 16.08,
+        "max_seconds": 17.454
+      },
+      "peak_process_rss_mb": 7898.5
+    },
+    {
+      "model": "sd-turbo",
+      "profile": {
+        "model": "stabilityai/sd-turbo",
+        "revision": "b261bac6fd2cf515557d5d0707481eafa0485ec2",
+        "steps": 4,
+        "size": 512,
+        "guidance": 0.0,
+        "safetensors": true
+      },
+      "size": 512,
+      "steps": 4,
+      "cpu_threads": 2,
+      "platform": "macOS-26.6.2-arm64-arm-64bit",
+      "machine": "arm64",
+      "torch": "2.14.1",
+      "runs": [
+        {
+          "id": "cat-bicycle",
+          "category": "simple illustration",
+          "prompt": "A cute orange cat riding a tiny blue bicycle, whimsical cartoon illustration, sunny park",
+          "seed": 42,
+          "seconds": 5.608,
+          "image": "cat-bicycle-42.png"
+        },
+        {
+          "id": "cat-bicycle",
+          "category": "simple illustration",
+          "prompt": "A cute orange cat riding a tiny blue bicycle, whimsical cartoon illustration, sunny park",
+          "seed": 43,
+          "seconds": 5.405,
+          "image": "cat-bicycle-43.png"
+        },
+        {
+          "id": "product",
+          "category": "product photo",
+          "prompt": "Studio product photograph of a white ceramic coffee mug on a pale green background, soft natural lighting, clear silhouette, no text",
+          "seed": 42,
+          "seconds": 5.328,
+          "image": "product-42.png"
+        },
+        {
+          "id": "product",
+          "category": "product photo",
+          "prompt": "Studio product photograph of a white ceramic coffee mug on a pale green background, soft natural lighting, clear silhouette, no text",
+          "seed": 43,
+          "seconds": 5.296,
+          "image": "product-43.png"
+        },
+        {
+          "id": "relations",
+          "category": "spatial relationships",
+          "prompt": "A red cube to the left of a blue sphere on a white table, clean minimalist illustration",
+          "seed": 42,
+          "seconds": 5.339,
+          "image": "relations-42.png"
+        },
+        {
+          "id": "relations",
+          "category": "spatial relationships",
+          "prompt": "A red cube to the left of a blue sphere on a white table, clean minimalist illustration",
+          "seed": 43,
+          "seconds": 5.617,
+          "image": "relations-43.png"
+        }
+      ],
+      "scope": "Local generation only; excludes agent planning, queue, transfers and phone finalization",
+      "memory_note": "Sampled process RSS, not total GPU memory or a hard memory cap",
+      "quality_note": "Images require human review; no automated quality score is claimed",
+      "backend": "cpu",
+      "load_seconds": 2.263,
+      "safety_checker_present": false,
+      "first_inference_seconds": 6.1,
+      "summary": {
+        "samples": 6,
+        "median_seconds": 5.372,
+        "min_seconds": 5.296,
+        "max_seconds": 5.617
+      },
+      "peak_process_rss_mb": 11236.3
+    }
+  ],
+  "visual_observations": [
+    "Tiny-SD cat seed42 is recognizable but bicycle color differs from prompt.",
+    "Tiny-SD cat seed43 has extra wheel/geometry artifacts.",
+    "SD-Turbo cat seed43 adds multiple cats.",
+    "SD-Turbo relations seed42 omits the blue sphere.",
+    "Tiny-SD relations seed42 puts the sphere above the cube instead of to its right."
+  ],
+  "decision": "Keep Tiny-SD as live default; SD-Turbo remains benchmark-only pending broader quality and GPU evaluation."
+}

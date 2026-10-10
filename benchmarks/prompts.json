@@ -1,0 +1,7 @@
+[
+  {"id":"cat-bicycle","category":"simple illustration","prompt":"A cute orange cat riding a tiny blue bicycle, whimsical cartoon illustration, sunny park"},
+  {"id":"product","category":"product photo","prompt":"Studio product photograph of a white ceramic coffee mug on a pale green background, soft natural lighting, clear silhouette, no text"},
+  {"id":"relations","category":"spatial relationships","prompt":"A red cube to the left of a blue sphere on a white table, clean minimalist illustration"},
+  {"id":"counting","category":"exact object count","prompt":"Exactly three yellow rubber ducks in a row on a blue shelf, simple illustration"},
+  {"id":"text","category":"typography","prompt":"A cafe poster with the exact words FRESH COFFEE in large readable letters, cream background, brown lettering"}
+]

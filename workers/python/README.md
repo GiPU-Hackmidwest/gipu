@@ -41,3 +41,13 @@ workers/python/.venv/bin/python -m pytest tests/test_worker.py -q
 ```
 
 Tests check pixel accuracy, cancellation boundaries, and source URL token isolation. The smoke command is the separate proof of real local inference.
+
+## Experimental model comparison
+
+The live grid still uses Tiny-SD. To test a different local model independently:
+
+```sh
+workers/python/.venv/bin/python workers/python/worker.py smoke --model sd-turbo --backend cpu --output .cache/sd-turbo.png
+```
+
+The first run downloads weights. Turbo defaults to 512px, four steps and zero guidance. Experimental models are blocked in `run` mode until the coordinator supports model-aware assignment. Use [the benchmark runner](../../benchmarks/README.md) for timed comparisons and image galleries.
