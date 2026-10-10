@@ -92,8 +92,8 @@ private struct CreateView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(job.prompt).font(.headline)
                             Text(job.status.capitalized).foregroundStyle(.secondary)
-                            ProgressView(value: Double(job.tasks.filter { $0.status == "completed" }.count), total: Double(max(1, job.tasks.count)))
-                            ForEach(job.images) { item in ProtectedImage(path: item.url, stage: item.stage) }
+                            JobProgressView(job: job)
+                            ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant) }
                             if let receipt = job.receipt {
                                 Text("Receipt · workers \(receipt.contributor_total) + service \(receipt.platform_fee) = \(receipt.total_charged) charged. \(receipt.refund) returned.").font(.caption)
                             } else {
@@ -110,21 +110,64 @@ private struct CreateView: View {
     }
 }
 
+private struct JobProgressView: View {
+    @EnvironmentObject private var grid: GridModel
+    let job: GridJob
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            let generated = job.completedCount("image_generate")
+            let finished = job.completedCount("image_finalize")
+            ProgressView(value: Double(generated + finished), total: Double(max(1, job.imageCount * 2)))
+                .accessibilityLabel("Image processing steps")
+                .accessibilityValue("\(generated) of \(job.imageCount) generated, \(finished) of \(job.imageCount) finished")
+            stage("Generated", kind: "image_generate", completed: generated)
+            stage("Finished", kind: "image_finalize", completed: finished)
+            if !grid.sharing && job.canStartFinishing(on: grid.ownDevice, limits: grid.limits) {
+                Text("This phone is paused and can help finish these images.").font(.subheadline)
+                Button("Start this phone") { Task { await grid.start() } }
+                    .buttonStyle(.borderedProminent)
+                    .frame(minHeight: 44)
+                    .disabled(grid.busy || grid.contributionTransition)
+                Text("Share for up to \(grid.limits.session_minutes) minutes within your limits. Keep this app open; the grid assigns compatible finishing work. Pause anytime in Contribute.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func stage(_ title: String, kind: String, completed: Int) -> some View {
+        let state = job.stageState(kind, devices: grid.snapshot?.devices ?? [], serverTime: grid.snapshot?.server_time)
+        return VStack(alignment: .leading, spacing: 3) {
+            Text("\(title): \(completed) of \(job.imageCount)").font(.subheadline.weight(.semibold))
+            Text(state.message(for: kind)).font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct ProtectedImage: View {
     @EnvironmentObject private var grid: GridModel
     let path: String
     let stage: String
+    let variant: Int
     @State private var image: UIImage?
     @State private var failed = false
     var body: some View {
         VStack(alignment: .leading) {
-            if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 280).accessibilityLabel("Grid generated image") }
+            if let image { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 280).accessibilityLabel("Image \(variant + 1), \(stageLabel)") }
             else if failed { Label("Image unavailable", systemImage: "photo.badge.exclamationmark") }
             else { ProgressView() }
-            Text(stage.replacingOccurrences(of: "_", with: " ").capitalized).font(.caption).foregroundStyle(.secondary)
+            Text("Image \(variant + 1) · \(stageLabel)").font(.caption).foregroundStyle(.secondary)
         }.task(id: path) {
             do { image = UIImage(data: try await grid.image(path)); failed = image == nil }
             catch { failed = true }
+        }
+    }
+    private var stageLabel: String {
+        switch stage {
+        case "image_generate": return "Generated preview · not finished"
+        case "image_finalize": return "Finished export"
+        default: return "Image output"
         }
     }
 }
@@ -198,12 +241,18 @@ private struct ActivityView: View {
                     ForEach(grid.snapshot?.devices ?? []) { device in
                         VStack(alignment: .leading) {
                             Text(device.name)
-                            Text("\(device.kind) · \(device.online ? "online" : "offline") · \(device.enabled ? "enabled" : "paused")").font(.caption).foregroundStyle(.secondary)
+                            Text("\(device.kind) · \(device.online ? "online" : "offline") · \(sharingStatus(device))").font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
                 Section { Button("Disconnect this phone", role: .destructive) { Task { await grid.disconnect() } } }
             }.navigationTitle("Activity").refreshable { await grid.refresh() }
         }
+    }
+
+    private func sharingStatus(_ device: Device) -> String {
+        guard device.enabled else { return "sharing paused" }
+        guard let now = grid.snapshot?.server_time, let expiry = device.session_expires_at else { return "checking sharing session" }
+        return expiry > now ? "sharing enabled" : "sharing session ended"
     }
 }
