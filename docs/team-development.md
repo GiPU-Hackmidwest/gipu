@@ -1,6 +1,6 @@
 # PocketGrid team development
 
-Keep the working device-compute demo available while improving image quality, routing, reliability and presentation. The following ownership split is proposed and can be reassigned.
+Keep the working device-compute demo available while improving image quality, routing, reliability and presentation. The agreed split is: Arboy with Codex owns models, routing and UI; the teammate with Claude owns reliability and deployment.
 
 ## Current baseline
 
@@ -8,13 +8,13 @@ Python coordinator with SQLite, AWS Strands planning through the Akamai chat end
 
 ## Ownership
 
-| Workstream | Proposed owner | Main files | First deliverable |
+| Workstream | Owner | Main files | First deliverable |
 | --- | --- | --- | --- |
-| Model quality and routing | Teammate with Claude | workers/python/, new services/routing/, new benchmarks/ | Reproducible Tiny-SD versus SD-Turbo versus SDXL-Turbo benchmark and pure routing interface |
-| Reliability and deployment | User with Codex | services/coordinator/, deploy/, coordinator tests | Durable asynchronous submission, reliable recovery and public HTTPS deployment |
-| UI and demo | User with Codex initially | apps/web/, apps/ios/ | Clear planning, waiting, generating, finishing and completed states; actionable sharing controls |
+| Model quality and routing | Arboy with Codex | workers/python/, new services/routing/, new benchmarks/ | Reproducible Tiny-SD versus SD-Turbo versus SDXL-Turbo benchmark and pure routing interface |
+| Reliability and deployment | Teammate with Claude | services/coordinator/, deploy/, coordinator tests | Durable asynchronous submission, reliable recovery and public HTTPS deployment |
+| UI and demo | Arboy with Codex | apps/web/, apps/ios/ | Clear planning, waiting, generating, finishing and completed states; actionable sharing controls |
 
-Coordinator integration, schemas, pricing and shared dependency changes require a coordinated PR. Avoid two people editing agent.py or store.py simultaneously. UI work can move to the teammate after the model PR merges.
+Claude owns coordinator integration, including agent.py, store.py, persistence and server-side routing enforcement. Codex owns the standalone routing decision module, model adapters, worker changes and client presentation. Agree request/response fields in docs/protocol.md before implementing cross-boundary changes. Coordinator schemas, pricing and shared dependencies require a coordinated PR; avoid editing the same files simultaneously.
 
 ## Routing design
 
@@ -48,10 +48,24 @@ Use a private shared repository initially. Each developer clones separately, cre
 
 Do not share .env through Git or chat. Use separate credentials where possible and configure each machine independently. Local session balances, identities and installed model weights do not travel with a clone. Read README.md for installation and verification commands.
 
+## Teammate onboarding and access
+
+The reliability and deployment work does not require local image models. Start with the coordinator environment and deterministic tests. Use fake workers in tests to exercise leases, retries and accounting; do not describe those tests as proof of real image generation. Arboy supplies a real laptop worker for the joint end-to-end test.
+
+First tasks:
+
+1. Clone the repo, read AGENTS.md and docs/protocol.md, and follow README.md setup. Keep credentials in the ignored local .env.
+2. Run the coordinator tests listed in README.md before changing behavior. Start in manual mode for provider-independent development; use the Akamai planner only when credentials are configured.
+3. On a fix/job-submission branch, add durable planning and prompt acknowledgement, retry idempotency and recovery after process restart. Coordinate the new client-visible states with Arboy before changing response contracts.
+4. On a separate deployment branch, prepare Linode Docker/Caddy HTTPS hosting, persistent data, health checks, restart behavior and documented recovery. Follow deploy/README.md and deploy/workshop.md. The coordinator does not need image-model weights or a GPU.
+5. Run a joint test with Arboy's real laptop worker and the physical phone, including disconnects, pause/session expiry and balanced receipts.
+
+For SSH access, the teammate generates or reuses their own key pair and sends only the public .pub contents to Arboy. Install that public key in the intended server account's ~/.ssh/authorized_keys on the existing Linode; adding a key to Cloud Manager alone does not install it retroactively. Preserve existing keys. Allow the teammate's current public IP on the SSH firewall rule and verify login. Share the server address and username separately; private SSH keys and API keys never go into the repository. Server access has not been granted by this document.
+
 ## Claude handoff
 
-Read AGENTS.md, README.md, docs/protocol.md and this guide. Own model benchmarking and a standalone routing module. Preserve Tiny-SD and existing worker protocol. Compare Tiny-SD, SD-Turbo and SDXL-Turbo using real local measurements. Propose model capability metadata and a pure routing interface before modifying coordinator schemas. Keep cloud execution disabled until its provider, user permission and budget enforcement are implemented. Submit focused PRs with evidence and setup instructions.
+Read AGENTS.md, README.md, docs/protocol.md and this guide. Own coordinator reliability and Akamai Linode deployment. You do not need local image models to start. Run the deterministic coordinator tests, then create a feature branch for durable asynchronous job planning, fast acknowledgement, retry idempotency and restart recovery. Preserve device opt-in, session expiry, lease fencing and exactly-once settlement. Own services/coordinator/, deploy/ and their tests. Coordinate API changes with Arboy, who owns the model workers, standalone routing module and UI. Keep model weights off the coordinator. Prepare Docker/Caddy HTTPS deployment and validate the real device flow with Arboy's worker. Submit focused PRs with tests and deployment instructions.
 
 ## Codex handoff
 
-Own coordinator reliability, deployment and initially UI. Preserve the ledger and worker lease invariants. Replace synchronous long-running submission with durable planning and fast job acknowledgement. Coordinate routing integration with the teammate through a reviewed schema change. Expose real stage timings and actionable device status, then validate the image flow across physical devices and Linode HTTPS.
+Own local image-model quality, benchmarks, model-selection logic and the web/Tauri/SwiftUI interfaces. Preserve Tiny-SD as a working fallback. Benchmark model quality, latency and memory on the actual laptop before selecting a replacement. Implement routing as a separate module with a reviewed contract for Claude to integrate into the coordinator. Expose local/cloud execution, planning and queue states, actual stage timings, workload controls and receipts. Coordinate server schema and pricing changes with the teammate; do not independently rewrite agent.py or store.py. Supply the real image worker for joint reliability and deployment validation.
