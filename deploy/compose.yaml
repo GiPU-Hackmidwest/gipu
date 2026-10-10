@@ -1,0 +1,42 @@
+services:
+  coordinator:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    environment:
+      POCKETGRID_JOIN_CODE: ${POCKETGRID_JOIN_CODE:?Set a private grid join code}
+      POCKETGRID_ALLOWED_ORIGINS: https://${POCKETGRID_DOMAIN:?Set your domain},tauri://localhost,http://tauri.localhost
+      POCKETGRID_AGENT_MODE: ${POCKETGRID_AGENT_MODE:-manual}
+      AKAMAI_BASE_URL: ${AKAMAI_BASE_URL:-https://ws.akamai-workshops.com/v1}
+      AKAMAI_CHAT_MODEL: ${AKAMAI_CHAT_MODEL:-hackathon-chat}
+      AKAMAI_API_KEY: ${AKAMAI_API_KEY:-}
+      POCKETGRID_BEDROCK_MODEL: ${POCKETGRID_BEDROCK_MODEL:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+    volumes:
+      - grid-data:/data
+    expose:
+      - '8787'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+  https:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      POCKETGRID_DOMAIN: ${POCKETGRID_DOMAIN:?Set your domain}
+    ports: ['80:80', '443:443']
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      coordinator:
+        condition: service_healthy
+volumes:
+  grid-data:
+  caddy-data:
+  caddy-config:

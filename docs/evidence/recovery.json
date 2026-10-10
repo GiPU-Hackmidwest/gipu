@@ -1,0 +1,30 @@
+{
+  "physical_hosts": 1,
+  "description": "Real local diffusion on two logical processes; SIGKILL and lease recovery",
+  "job_id": "33ee6448983c431d81febcd488f6fb18",
+  "task_id": "1777ca1302fb476483558599875ae2fe",
+  "first_device": "37a068b370014b5abea6e96acbe0b5ea",
+  "first_attempt": 1,
+  "reassigned_after_seconds": 14.7,
+  "second_device": "6e34f66e075a447c8fc47ac63d177b69",
+  "second_attempt": 2,
+  "same_task": true,
+  "generation_completed": true,
+  "receipt": {
+    "budget": 10,
+    "contributor_total": 7,
+    "platform_fee": 1,
+    "refund": 2,
+    "total_charged": 8
+  },
+  "pause": {
+    "job_id": "b53722ee3fc04185bcc6d6de3abfcca7",
+    "status": "cancelled",
+    "spent": 0,
+    "refunded": 10,
+    "images": 0,
+    "worker_logged_cancel": true
+  },
+  "success": true,
+  "crashed_device_earned": 0
+}

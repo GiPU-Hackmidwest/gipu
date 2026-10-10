@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "deployment_container": "pocketgrid-prototype:local",
+  "physical_hosts": 1,
+  "runtime": {
+    "uid": 10001,
+    "torch_installed": false
+  },
+  "job_id": "6a9dfd84d082449d8f6ac7ff01e1fd3b",
+  "receipt": {
+    "budget": 10,
+    "contributor_total": 7,
+    "platform_fee": 1,
+    "refund": 2,
+    "total_charged": 8
+  },
+  "tasks": [
+    {
+      "kind": "image_finalize",
+      "metrics": {
+        "backend": "cpu",
+        "model": "Pillow",
+        "elapsed_seconds": 0.008
+      }
+    },
+    {
+      "kind": "image_generate",
+      "metrics": {
+        "backend": "cpu",
+        "model": "segmind/tiny-sd",
+        "elapsed_seconds": 3.402
+      }
+    }
+  ]
+}

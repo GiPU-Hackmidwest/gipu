@@ -1,0 +1,7 @@
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic>=2.10,<3
+pillow>=11,<13
+strands-agents[ollama,openai]>=1.0,<2
+httpx>=0.28,<1
+pytest>=8,<10

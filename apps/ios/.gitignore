@@ -1,0 +1,5 @@
+.build/
+.build-log.txt
+.device-build-log.txt
+*.xcuserstate
+xcuserdata/

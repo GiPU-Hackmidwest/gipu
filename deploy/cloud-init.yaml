@@ -1,0 +1,10 @@
+#cloud-config
+# Adapted from the Akamai HackMidwest workshop: no keys in instance metadata.
+package_update: true
+packages:
+  - docker.io
+  - docker-compose-v2
+ssh_pwauth: false
+runcmd:
+  - systemctl enable --now docker
+  - mkdir -p /opt/pocketgrid

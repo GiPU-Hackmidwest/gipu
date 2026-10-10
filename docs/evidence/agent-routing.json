@@ -1,0 +1,356 @@
+{
+  "scope": "One host; real Strands/Ollama, controlled test clients, actual local diffusion subprocess",
+  "passed": true,
+  "initial_routes": {
+    "image_generate": [
+      "96ae3524b1564742ad6bea831c1f3fb7"
+    ],
+    "image_finalize": [
+      "96ae3524b1564742ad6bea831c1f3fb7"
+    ]
+  },
+  "recovery_routes": [
+    "d95b7c9aa30a46fda993c20b7e78aef7",
+    "53427b612ba14b4d86f3645511ec5d0e"
+  ],
+  "attempts": 2,
+  "receipt": {
+    "budget": 10,
+    "contributor_total": 7,
+    "platform_fee": 1,
+    "refund": 2,
+    "total_charged": 8
+  },
+  "metrics": {
+    "backend": "cpu",
+    "model": "segmind/tiny-sd",
+    "elapsed_seconds": 4.029,
+    "bytes": 104753
+  },
+  "tools": [
+    {
+      "tool": "inspect_devices",
+      "result": {
+        "devices": [
+          {
+            "id": "d95b7c9aa30a46fda993c20b7e78aef7",
+            "name": "Routing client A",
+            "kind": "python",
+            "capabilities": [
+              "image_generate",
+              "image_finalize"
+            ],
+            "eligible": true,
+            "available": true,
+            "active_task_id": null,
+            "max_pixels": 65536
+          },
+          {
+            "id": "96ae3524b1564742ad6bea831c1f3fb7",
+            "name": "Routing client B",
+            "kind": "python",
+            "capabilities": [
+              "image_generate",
+              "image_finalize"
+            ],
+            "eligible": true,
+            "available": true,
+            "active_task_id": null,
+            "max_pixels": 65536
+          }
+        ],
+        "required_pixels": 65536
+      }
+    },
+    {
+      "tool": "quote_job",
+      "result": {
+        "quote": 8,
+        "budget": 10,
+        "pipeline": "image_generate on Python; image_finalize on Python/browser/iOS",
+        "variants": 1
+      }
+    },
+    {
+      "tool": "submit_job",
+      "result": {
+        "job_id": "12ab700e5fb54e0d8f8ae89e73b8af16",
+        "status": "submitted"
+      },
+      "input": {
+        "image_generate": [
+          "96ae3524b1564742ad6bea831c1f3fb7"
+        ],
+        "image_finalize": [
+          "96ae3524b1564742ad6bea831c1f3fb7"
+        ]
+      }
+    },
+    {
+      "tool": "inspect_job",
+      "result": {
+        "id": "12ab700e5fb54e0d8f8ae89e73b8af16",
+        "status": "queued",
+        "spent": 0,
+        "reserved": 10,
+        "receipt": null,
+        "routes": {
+          "image_generate": [
+            "96ae3524b1564742ad6bea831c1f3fb7"
+          ],
+          "image_finalize": [
+            "96ae3524b1564742ad6bea831c1f3fb7"
+          ]
+        },
+        "task_routes": {},
+        "tasks": [
+          {
+            "id": "b522656409db4732943cca9e8fa65e5b",
+            "kind": "image_generate",
+            "status": "queued",
+            "attempts": 0,
+            "device_id": null,
+            "output_url": null,
+            "metrics": {}
+          }
+        ],
+        "verification": "Generation: PNG format/dimensions; export: exact pixels. No semantic image-quality guarantee."
+      }
+    }
+  ],
+  "reviews": [
+    {
+      "event_id": 4,
+      "at": 1791658887.00299,
+      "status": "done",
+      "tools": [
+        {
+          "tool": "inspect_job",
+          "result": {
+            "id": "12ab700e5fb54e0d8f8ae89e73b8af16",
+            "status": "running",
+            "spent": 0,
+            "reserved": 10,
+            "receipt": null,
+            "routes": {
+              "image_generate": [
+                "96ae3524b1564742ad6bea831c1f3fb7"
+              ],
+              "image_finalize": [
+                "96ae3524b1564742ad6bea831c1f3fb7"
+              ]
+            },
+            "task_routes": {},
+            "tasks": [
+              {
+                "id": "b522656409db4732943cca9e8fa65e5b",
+                "kind": "image_generate",
+                "status": "queued",
+                "attempts": 1,
+                "device_id": null,
+                "output_url": null,
+                "metrics": {}
+              }
+            ],
+            "verification": "Generation: PNG format/dimensions; export: exact pixels. No semantic image-quality guarantee."
+          }
+        },
+        {
+          "tool": "inspect_devices",
+          "result": {
+            "devices": [
+              {
+                "id": "d95b7c9aa30a46fda993c20b7e78aef7",
+                "name": "Routing client A",
+                "kind": "python",
+                "capabilities": [
+                  "image_generate",
+                  "image_finalize"
+                ],
+                "eligible": true,
+                "available": true,
+                "active_task_id": null,
+                "max_pixels": 65536
+              },
+              {
+                "id": "96ae3524b1564742ad6bea831c1f3fb7",
+                "name": "Routing client B",
+                "kind": "python",
+                "capabilities": [
+                  "image_generate",
+                  "image_finalize"
+                ],
+                "eligible": false,
+                "available": false,
+                "active_task_id": null,
+                "max_pixels": 65536
+              },
+              {
+                "id": "53427b612ba14b4d86f3645511ec5d0e",
+                "name": "Unselected newcomer C",
+                "kind": "python",
+                "capabilities": [
+                  "image_generate",
+                  "image_finalize"
+                ],
+                "eligible": true,
+                "available": true,
+                "active_task_id": null,
+                "max_pixels": 65536
+              }
+            ],
+            "required_pixels": 65536
+          }
+        },
+        {
+          "tool": "update_routing",
+          "result": {
+            "job_id": "12ab700e5fb54e0d8f8ae89e73b8af16",
+            "status": "running",
+            "task_routes": {
+              "b522656409db4732943cca9e8fa65e5b": {
+                "device_ids": [
+                  "d95b7c9aa30a46fda993c20b7e78aef7",
+                  "53427b612ba14b4d86f3645511ec5d0e"
+                ],
+                "until": 1791658931.7490351,
+                "attempt": 1,
+                "explanation": "Prior failed device: 96ae3524b1564742ad6bea831c1f3fb7; prefer other eligible devices."
+              }
+            }
+          },
+          "input": {
+            "image_generate": [
+              "d95b7c9aa30a46fda993c20b7e78aef7",
+              "53427b612ba14b4d86f3645511ec5d0e"
+            ],
+            "image_finalize": [
+              "d95b7c9aa30a46fda993c20b7e78aef7",
+              "53427b612ba14b4d86f3645511ec5d0e"
+            ]
+          }
+        },
+        {
+          "tool": "inspect_job",
+          "result": {
+            "id": "12ab700e5fb54e0d8f8ae89e73b8af16",
+            "status": "running",
+            "spent": 0,
+            "reserved": 10,
+            "receipt": null,
+            "routes": {
+              "image_generate": [
+                "96ae3524b1564742ad6bea831c1f3fb7"
+              ],
+              "image_finalize": [
+                "96ae3524b1564742ad6bea831c1f3fb7"
+              ]
+            },
+            "task_routes": {
+              "b522656409db4732943cca9e8fa65e5b": {
+                "device_ids": [
+                  "d95b7c9aa30a46fda993c20b7e78aef7",
+                  "53427b612ba14b4d86f3645511ec5d0e"
+                ],
+                "until": 1791658931.7490351,
+                "attempt": 1,
+                "explanation": "Prior failed device: 96ae3524b1564742ad6bea831c1f3fb7; prefer other eligible devices."
+              }
+            },
+            "tasks": [
+              {
+                "id": "b522656409db4732943cca9e8fa65e5b",
+                "kind": "image_generate",
+                "status": "queued",
+                "attempts": 1,
+                "device_id": null,
+                "output_url": null,
+                "metrics": {}
+              }
+            ],
+            "verification": "Generation: PNG format/dimensions; export: exact pixels. No semantic image-quality guarantee."
+          }
+        }
+      ],
+      "error": null
+    },
+    {
+      "event_id": 13,
+      "at": 1791658896.4311502,
+      "status": "done",
+      "tools": [
+        {
+          "tool": "inspect_job",
+          "result": {
+            "id": "12ab700e5fb54e0d8f8ae89e73b8af16",
+            "status": "completed",
+            "spent": 8,
+            "reserved": 0,
+            "receipt": {
+              "budget": 10,
+              "contributor_total": 7,
+              "platform_fee": 1,
+              "refund": 2,
+              "total_charged": 8
+            },
+            "routes": {
+              "image_generate": [
+                "96ae3524b1564742ad6bea831c1f3fb7"
+              ],
+              "image_finalize": [
+                "96ae3524b1564742ad6bea831c1f3fb7"
+              ]
+            },
+            "task_routes": {
+              "b522656409db4732943cca9e8fa65e5b": {
+                "device_ids": [
+                  "d95b7c9aa30a46fda993c20b7e78aef7",
+                  "53427b612ba14b4d86f3645511ec5d0e"
+                ],
+                "until": 1791658931.7490351,
+                "attempt": 1,
+                "explanation": "Prior failed device: 96ae3524b1564742ad6bea831c1f3fb7; prefer other eligible devices."
+              },
+              "f73b0f68b1bc418fbac738b5d025d09a": {
+                "device_ids": [
+                  "96ae3524b1564742ad6bea831c1f3fb7"
+                ],
+                "until": 1791658941.018373,
+                "attempt": 0,
+                "explanation": "Initial finalizer selection; stage is now ready"
+              }
+            },
+            "tasks": [
+              {
+                "id": "f73b0f68b1bc418fbac738b5d025d09a",
+                "kind": "image_finalize",
+                "status": "completed",
+                "attempts": 1,
+                "device_id": "d95b7c9aa30a46fda993c20b7e78aef7",
+                "output_url": "/api/images/bb44166390d24bd89c4d783b5f677e84",
+                "metrics": {
+                  "backend": "Pillow"
+                }
+              },
+              {
+                "id": "b522656409db4732943cca9e8fa65e5b",
+                "kind": "image_generate",
+                "status": "completed",
+                "attempts": 2,
+                "device_id": "d95b7c9aa30a46fda993c20b7e78aef7",
+                "output_url": "/api/images/84644426a3084193bc725568c4f247b6",
+                "metrics": {
+                  "backend": "cpu",
+                  "model": "segmind/tiny-sd",
+                  "elapsed_seconds": 4.029
+                }
+              }
+            ],
+            "verification": "Generation: PNG format/dimensions; export: exact pixels. No semantic image-quality guarantee."
+          }
+        }
+      ],
+      "error": null
+    }
+  ]
+}
