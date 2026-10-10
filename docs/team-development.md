@@ -2,6 +2,8 @@
 
 Keep the working device-compute demo available while improving image quality, routing, reliability and presentation. The agreed split is: Arboy with Codex owns models, routing and UI; the teammate with Claude owns reliability and deployment.
 
+Read [the full project context](project-context.md) for the detailed architecture, actual device roles and verified status.
+
 ## Current baseline
 
 Python coordinator with SQLite, AWS Strands planning through the Akamai chat endpoint, Python Tiny-SD laptop workers, SwiftUI phone finalizers and React/Tauri clients. Image tasks are independent whole-image computations. Phones do final processing, not distributed diffusion layers. Credits are sandbox units. Linode SSH is verified; application deployment remains pending. Cloud image generation is not implemented.

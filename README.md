@@ -4,6 +4,8 @@
 
 The first workload is a prompt → independently generated image variants → device-side PNG export. The model is not split across phones. Each capable laptop handles a whole image. A failed generation restarts on another laptop; it does not resume a diffusion checkpoint. Phones apply a small fixed pixel transform, so their work is real but intentionally limited.
 
+New to the project? Start with [the full project context](docs/project-context.md), including what runs on each device and the Claude/Codex ownership split.
+
 ## Start locally
 
 Requires Python3.11, Node22, and approximately3GB free for the laptop worker and model. Additional disk is needed for native build caches. A fresh clone needs the setup commands below; local environments and model weights are not committed.
@@ -79,7 +81,7 @@ POCKETGRID_AGENT_MODE=manual
 
 Selecting the agent in the UI without a configured provider returns an explicit error and reserves nothing. Bedrock is only the planner; image inference still runs on contributors. Local Strands/Ollama was exercised during verification; Bedrock needs valid account credentials and model access. The Akamai container and HTTPS deployment are prepared, but a live Akamai host has not been claimed. DevRev is optional and is not wired into this first compute prototype.
 
-The Akamai workshop provider is implemented using Strands' OpenAI-compatible adapter and the documented `hackathon-chat` alias. Its HTTP/tool flow is tested with simulated responses; an authenticated live run is still pending the saved API key. See [workshop setup](deploy/workshop.md). The team model key is separate from access to deploy a VM.
+The Akamai workshop provider is implemented using Strands' OpenAI-compatible adapter and the documented `hackathon-chat` alias. Its HTTP/tool flow has adapter tests, and live chat authentication plus a real Strands job submission were subsequently verified during the October 10 demo. See [workshop setup](deploy/workshop.md). The team model key is separate from access to deploy a VM.
 
 ## Architecture and checks
 

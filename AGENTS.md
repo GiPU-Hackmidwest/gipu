@@ -1,6 +1,6 @@
 # PocketGrid development instructions
 
-Read README.md, docs/protocol.md and docs/team-development.md before changing behavior.
+Read docs/project-context.md first, then README.md, docs/protocol.md and docs/team-development.md before changing behavior.
 
 - Preserve explicit device opt-in, Pause, session expiry, lease fencing and exactly-once credit settlement.
 - Keep secrets, worker identity files, generated images and local databases out of Git. Use .env.example for configuration names only.
