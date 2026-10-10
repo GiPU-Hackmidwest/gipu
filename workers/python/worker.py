@@ -26,6 +26,14 @@ import psutil
 
 MODEL = "segmind/tiny-sd"
 MODEL_REVISION = "cad0bd7495fa6c4bcca01b19a723dc91627fe84f"
+MODEL_PROFILES = {
+    "tiny-sd": {"model": MODEL, "revision": MODEL_REVISION, "steps": 12,
+                "size": 256, "guidance": 7.5, "safetensors": False},
+    "sd-turbo": {"model": "stabilityai/sd-turbo", "revision": "b261bac6fd2cf515557d5d0707481eafa0485ec2",
+                 "steps": 4, "size": 512, "guidance": 0.0, "safetensors": True},
+    "sdxl-turbo": {"model": "stabilityai/sdxl-turbo", "revision": "71153311d3dbb46851df1931d3ca6e939de83304",
+                   "steps": 4, "size": 512, "guidance": 0.0, "safetensors": True},
+}
 FRAME = (36, 203, 166)
 
 
@@ -64,20 +72,29 @@ def denoising_callback(cancel: threading.Event, steps: int, progress: Callable[[
 class LocalRenderer:
     def __init__(self, backend: str = "auto", model: str = MODEL):
         self.backend = backend
-        self.model = model
+        matches = [p for key, p in MODEL_PROFILES.items() if model in (key, p["model"])]
+        if not matches:
+            raise ValueError("Unknown model; select a pinned PocketGrid model profile")
+        self.profile = matches[0]
+        self.model = self.profile["model"]
         self.pipeline = None
 
     def load(self, cpu_threads: int = 2, local_only: bool = False) -> None:
         import torch
-        from diffusers import StableDiffusionPipeline
+        from diffusers import AutoPipelineForText2Image
         torch.set_num_threads(cpu_threads)
         if self.backend == "auto":
             self.backend = "mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu"
+        if self.backend == "mps" and not torch.backends.mps.is_available():
+            raise RuntimeError("Apple GPU (MPS) is unavailable in this process; use --backend cpu or run from a GPU-enabled terminal")
+        if self.backend == "cuda" and not torch.cuda.is_available():
+            raise RuntimeError("CUDA is unavailable in this process")
         dtype = torch.float32 if self.backend == "cpu" else torch.float16
         print(f"Loading {self.model} on {self.backend}; no job lease is held during model setup", flush=True)
-        self.pipeline = StableDiffusionPipeline.from_pretrained(
-            self.model, revision=MODEL_REVISION, torch_dtype=dtype, local_files_only=local_only,
-            use_safetensors=False,  # The publisher provides .bin weights; current torch loads weights only.
+        load_options = {"variant": "fp16"} if self.profile["safetensors"] else {}
+        self.pipeline = AutoPipelineForText2Image.from_pretrained(
+            self.model, revision=self.profile["revision"], torch_dtype=dtype, local_files_only=local_only,
+            use_safetensors=self.profile["safetensors"], **load_options,
         ).to(self.backend)
         self.pipeline.enable_attention_slicing()
         self.pipeline.set_progress_bar_config(disable=True)
@@ -93,13 +110,14 @@ class LocalRenderer:
         with torch.inference_mode():
             result = self.pipeline(
                 prompt=task["prompt"], width=int(task["width"]), height=int(task["height"]),
-                num_inference_steps=int(task["steps"]), guidance_scale=7.5,
+                num_inference_steps=int(task["steps"]), guidance_scale=self.profile["guidance"],
                 generator=torch.Generator(device="cpu").manual_seed(int(task["seed"])),
                 callback_on_step_end=denoising_callback(cancel, int(task["steps"]), progress),
                 callback_on_step_end_tensor_inputs=[],
             )
         check_cancelled(cancel)
-        if result.nsfw_content_detected and any(result.nsfw_content_detected):
+        flagged = getattr(result, "nsfw_content_detected", None)
+        if flagged and any(flagged):
             raise ValueError("The local model safety checker rejected this image")
         progress(0.98, "encoding PNG")
         output = io.BytesIO()
@@ -320,18 +338,27 @@ def main() -> None:
     capabilities = parser.add_mutually_exclusive_group()
     capabilities.add_argument("--finalize-only", action="store_true", help="Only run deterministic image export; no model needed")
     capabilities.add_argument("--generate-only", action="store_true", help="Leave image export tasks to phones/browser workers")
+    parser.add_argument("--model", choices=list(MODEL_PROFILES), default="tiny-sd",
+                        help="Experimental models are available for prepare/smoke only until grid model routing is integrated")
     parser.add_argument("--backend", choices=["auto", "cpu", "mps", "cuda"], default="auto")
     parser.add_argument("--cpu-threads", type=int, choices=range(1, 9), default=2)
     parser.add_argument("--max-pixels", type=int, choices=[65536, 147456, 262144], default=262144)
     parser.add_argument("--session-minutes", type=int, choices=range(1, 121), default=30)
     parser.add_argument("--local-only", action="store_true", help="Fail instead of downloading uncached model files")
     parser.add_argument("--prompt", default="A cute orange cat riding a tiny blue bicycle, whimsical cartoon illustration, sunny park")
-    parser.add_argument("--size", type=int, choices=[256, 384, 512], default=256)
-    parser.add_argument("--steps", type=int, choices=range(4, 31), default=12)
+    parser.add_argument("--size", type=int, choices=[256, 384, 512], default=None)
+    parser.add_argument("--steps", type=int, choices=range(1, 31), default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--output", default=str(ROOT / ".cache" / "smoke-cat.png"))
     args = parser.parse_args()
-    renderer = None if args.finalize_only and args.command == "run" else LocalRenderer(args.backend)
+    if args.command == "run" and args.model != "tiny-sd":
+        parser.error("Experimental models are benchmark-only; grid model routing is not integrated yet")
+    profile = MODEL_PROFILES[args.model]
+    args.size = args.size or profile["size"]
+    args.steps = args.steps or profile["steps"]
+    if args.model != "tiny-sd" and args.steps > 4:
+        parser.error("Turbo profiles support 1–4 benchmark steps")
+    renderer = None if args.finalize_only and args.command == "run" else LocalRenderer(args.backend, args.model)
     if renderer:
         renderer.load(args.cpu_threads, local_only=args.local_only)
     if args.command == "prepare":

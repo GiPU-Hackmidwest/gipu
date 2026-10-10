@@ -57,3 +57,27 @@ def test_does_not_forward_device_token_to_external_artifact_server():
             device.source_bytes("https://example.org/api/images/1")
     finally:
         device.client.close()
+
+
+def test_experimental_model_cannot_join_existing_untyped_grid(monkeypatch):
+    import sys
+    monkeypatch.setattr(sys, 'argv', ['worker.py', 'run', '--model', 'sd-turbo'])
+    monkeypatch.setattr(worker.LocalRenderer, 'load', lambda *a, **k: pytest.fail('Must reject before downloading or joining'))
+    with pytest.raises(SystemExit) as error:
+        worker.main()
+    assert error.value.code == 2
+
+
+def test_renderer_cancels_before_calling_experimental_pipeline():
+    renderer = worker.LocalRenderer('cpu', 'sd-turbo')
+    renderer.pipeline = lambda **kwargs: pytest.fail('Cancelled work must not run inference')
+    cancel = threading.Event()
+    cancel.set()
+    with pytest.raises(worker.WorkCancelled):
+        renderer.generate({'prompt': 'cat', 'width': 512, 'height': 512, 'steps': 4, 'seed': 42},
+                          cancel, lambda *_: None, 2)
+
+
+def test_unknown_model_is_rejected_without_downloading():
+    with pytest.raises(ValueError, match='pinned'):
+        worker.LocalRenderer('cpu', 'untrusted/arbitrary-model')
