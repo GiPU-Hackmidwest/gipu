@@ -21,12 +21,12 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C3 | Private sessions | review: corrected server scoping merged; todo: hosted deploy | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
-| C6 | Create images / Finish images toggles | todo: verify on Android | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
+| C6 | Create images / Finish images toggles | done: Finish images toggle verified on the Android emulator (shared control) | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
 | C8 | Device counts, no test devices | review: `grid` counts merged; todo: hosted deploy/cleanup if needed | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
 | C10 | Rename to GiPU | todo: Tauri productName, Android/release names and remaining docs | done: GiPU in-app name and mark; bundle IDs/env names preserved |
-| C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | partial: authoritative verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime remains legacy until deploy |
+| C11 | Shimmer + notification, no border | review: Python and browser/Android finishers frameless (`feat/v1-invisible-finish`); coordinator still accepts legacy; todo: Android notification icon | partial: authoritative verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime remains legacy until deploy |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
@@ -35,6 +35,26 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Claude · border-free finishing (branch `feat/v1-invisible-finish`)
+
+- **Python finisher** (`workers/python/worker.py`): `finalize_image` now decodes the PNG and re-encodes the same RGB pixels. Nothing is drawn; a non-PNG source is refused. `FRAME`/`ImageDraw` are gone.
+- **Browser and Android finisher** (`apps/web/src/browserWorker.ts`): the teal border drawing is removed. The image is decoded with `colorSpaceConversion: 'none'`, so the canvas copy stays pixel-identical. The telemetry stage now reads "Finishing image".
+- **Coordinator:** unchanged. It still accepts the legacy frame by default, so installed older apps keep settling.
+- **Docs:** the worker README, the web README canvas note, project context and team development now describe identical-pixel finishing.
+- **Verification:**
+  - Worker tests: 34 passed; the frame test was replaced by an identical-pixel test, plus a non-PNG refusal test. Coordinator: 77 passed. Web: 78 passed, plus `tsc -b` and build.
+  - Live run on a local coordinator started with **`POCKETGRID_ACCEPT_LEGACY_FRAME=0`**, so only frameless output could settle. A Python laptop generated each image.
+    - The new Python `--finalize-only` worker finished job 1.
+    - The browser's Finish images switch finished job 2.
+    - The Android debug APK built from this branch finished job 3 on the emulator, after a cold-start invite link and the Finish images switch.
+    - Every job completed with receipt 10 = 7 + 1 + 2. The finished image downloaded as identical to the generated one, and corner pixels were image colours, not RGB(36,203,166).
+  - Not verified: a physical Android phone, and iOS (Codex-owned, below).
+- **C6:** the shared Finish images switch works on Android. Off shows "Paused"; on shows "Sharing" and an end time; the phone then finished real work.
+- **Handoff (Codex):**
+  1. The hosted coordinator (`a34aef0`) accepts frameless output, so the staged invisible iOS encoder can become the runtime finisher.
+  2. Leave `POCKETGRID_ACCEPT_LEGACY_FRAME` on until every installed iOS/Android build is frameless; then Claude removes the legacy path.
+  3. **Stale session:** a client whose token is no longer valid (revoked from another device, or the server's data reset) stays on the dashboard showing "Coordinator: Invalid or missing credential" and "Updates interrupted" instead of returning to sign-in. Suggest treating 401 from `/state` as signed out, after stopping any local worker.
 
 ### 2026-10-11 · Codex · completed integration (`docs/v1-integration-results`)
 
