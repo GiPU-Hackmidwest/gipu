@@ -31,10 +31,21 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
 | C15 | Contribute layout on large screens | — | done: Mac and 320 px browser layout checked |
+| L1 | Weekly participation leaderboard (Arboy request) | handoff: additive coordinator rollout | review: metrics, privacy, clay UI and client builds verified; native leaderboard interaction pending |
 
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · weekly leaderboard (`feat/weekly-leaderboard`, review)
+
+- **Coordination:** Arboy explicitly requested implementing and merging a leaderboard with availability, credits used and participation metrics. This authorizes the focused coordinator/protocol/test changes alongside Mac/shared React and native iOS. No Android adapter or release-workflow change.
+- **Behavior:** membership off by default, separate public nickname, no private identity/device/job disclosure. Monday UTC rankings use accepted work for other accounts, net settled credits and prospective sharing time counted once across overlapping devices. Self-payments, grants, reservations and refunds cannot farm circulation points. Three personal goals navigate without enabling sharing; points do not mint credits.
+- **Design correction (Arboy):** exact logo orange `#FF5A09` across client accents. Score card and primary labels use neutral clay, with a ring showing actual goals completed out of three. Removed the decorative orbit/star and burnt-orange plaque. Ink focus outlines and narrow navigation labels remain readable.
+- **Verified:** coordinator 112 tests; frontend 83 tests and production build; Mac Tauri debug app bundle 29.84 MiB; complete iOS SwiftUI typecheck and leaderboard/lifecycle/privacy harnesses; host Xcode simulator build/run (iPhone 17 Pro Max, iOS 26.2). Additive DB startup preserved existing accounts/credits/sessions. Real local HTTP sharing counted 6 seconds, then stayed at 6 during 4 seconds after Pause. Browser UI Join/Leave immediately restored/removed the public row while preserving private progress; availability ranking matched server totals. Desktop and 320 px layouts inspected (320 px scroll width = viewport); console warnings/errors empty. Fixture images/work were controlled protocol inputs, not live inference or physical-device measurements.
+- **Native limits:** Xcode app runs paused, but individual simulator tabs have no reachable accessibility targets and coordinate operations fail `noWindowsAvailable`; native leaderboard interactions remain pending. Worktree Mac package builds but its launched window was blank while the existing main package renders normally; verification from the synced primary checkout is pending. No physical phone check claimed.
+- **Handoff:** deploy coordinator first (two additive tables; no balance changes), then updated clients. Existing coordinator shows an unavailable message until updated. Preserve volume and `.env`, back up before switching, never `down -v`. Root SSH access now verified with the existing identity; zero active hosted jobs/tasks observed before rollout. Installer workflow remains manual; no Actions run requested here.
+- **Open questions:** none on the metric/privacy contract. Full native UI and hosted rollout evidence will be appended after merge.
 
 ### 2026-10-11 · Claude · hosted deploy of `aace226` and releases v0.2.0 / v0.3.0
 

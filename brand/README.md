@@ -29,7 +29,7 @@ The icon is a geometric G whose crossbar is an orange **live dot**. The same dot
 | Ink on dark | `#F1F3F6` |
 | Light tile | `#F4F6F8` |
 
-Brand orange stays `#FF5A09`. The accessible action colour is the deeper `#C34400` with white labels; see [native UI design](../docs/native-ui-design.md).
+Brand and interface accents use `#FF5A09`. Action labels sit on neutral clay surfaces with readable ink; see [native UI design](../docs/native-ui-design.md).
 
 ## Usage
 

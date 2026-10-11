@@ -87,6 +87,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS link_codes(code TEXT PRIMARY KEY,user_id TEXT,expires_at REAL,used_at REAL);
             CREATE TABLE IF NOT EXISTS credentials(user_id TEXT PRIMARY KEY,username TEXT UNIQUE,salt TEXT,hash TEXT,updated_at REAL);
             CREATE TABLE IF NOT EXISTS cloud_outputs(task_id TEXT PRIMARY KEY,model TEXT,created_at REAL);
+            CREATE TABLE IF NOT EXISTS leaderboard_profiles(user_id TEXT PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 0,nickname TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS leaderboard_availability(user_id TEXT,week_start REAL,seconds REAL NOT NULL DEFAULT 0,PRIMARY KEY(user_id,week_start));
             CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status,kind);
             CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
             CREATE INDEX IF NOT EXISTS sessions_user ON user_sessions(user_id);
@@ -98,6 +100,8 @@ class Store:
             db.execute('UPDATE users SET token=NULL WHERE token IS NOT NULL')
         # Older iOS/Android finishers draw the teal frame; accept it until they all ship.
         self.accept_legacy_frame = os.getenv('POCKETGRID_ACCEPT_LEGACY_FRAME', '1') != '0'
+        # Prospective uptime only: a restart never backfills an unobserved gap.
+        self.availability_checkpoint = self.clock()
 
     @contextmanager
     def tx(self):
@@ -275,6 +279,8 @@ class Store:
         self.event(db, 'task_reassigned', f'{task["kind"]} queued again: {reason}', job_id=task['job_id'], device_id=task['device_id'])
 
     def sweep(self, db):
+        from .leaderboard import advance_availability
+        advance_availability(self, db)
         for row in db.execute('SELECT id,owner_id FROM devices WHERE enabled=1 AND session_expires_at<=?', (self.clock(),)).fetchall():
             db.execute('UPDATE devices SET enabled=0 WHERE id=?', (row['id'],))
             self.revoke(db, row['id'], 'Contribution session expired')
@@ -933,3 +939,19 @@ class Store:
     def tick(self):
         with self.tx() as db:
             self.sweep(db)
+
+    def leaderboard(self, user_id, metric='overall'):
+        from .leaderboard import view
+        with self.tx() as db:
+            self.sweep(db)
+            return view(self, db, user_id, metric)
+
+    def leaderboard_profile(self, user_id, enabled, public_nickname):
+        from .leaderboard import nickname, view
+        public_nickname = nickname(public_nickname)
+        with self.tx() as db:
+            self.sweep(db)
+            db.execute('''INSERT INTO leaderboard_profiles(user_id,enabled,nickname) VALUES(?,?,?)
+                          ON CONFLICT(user_id) DO UPDATE SET enabled=excluded.enabled,nickname=excluded.nickname''',
+                       (user_id, bool(enabled), public_nickname))
+            return view(self, db, user_id)

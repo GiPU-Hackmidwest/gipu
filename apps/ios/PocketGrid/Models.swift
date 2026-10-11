@@ -393,3 +393,89 @@ struct GridLink: Equatable, Identifiable {
         return parts.string ?? ""
     }
 }
+
+
+/// Public board fields are intentionally separate from private account identity.
+enum BoardMetric: String, CaseIterable, Identifiable, Decodable {
+    case overall, work, availability, credits
+    var id: String { rawValue }
+    var label: String {
+        switch self { case .overall: return "Overall"; case .work: return "Work"; case .availability: return "Available"; case .credits: return "Used" }
+    }
+    var unit: String {
+        switch self { case .overall: return "points"; case .work: return "tasks"; case .availability: return "sharing"; case .credits: return "credits" }
+    }
+    func value(_ metrics: BoardTotals) -> String {
+        switch self {
+        case .overall: return metrics.score.formatted()
+        case .work: return metrics.completed_tasks.formatted()
+        case .credits: return metrics.credits_used.formatted()
+        case .availability: return Self.duration(metrics.availability_seconds)
+        }
+    }
+    static func duration(_ seconds: Double) -> String {
+        let minutes = max(0, Int(seconds / 60))
+        if seconds > 0 && minutes == 0 { return "<1 min" }
+        if minutes < 60 { return "\(minutes) min" }
+        return minutes % 60 == 0 ? "\(minutes / 60) hr" : "\(minutes / 60) hr \(minutes % 60) min"
+    }
+}
+struct BoardTotals: Decodable {
+    let score: Int
+    let availability_seconds: Double
+    let credits_used: Int
+    let completed_tasks: Int
+    let images_created: Int
+}
+struct BoardSelf: Decodable {
+    let rank: Int?
+    let score: Int
+    let availability_seconds: Double
+    let credits_used: Int
+    let completed_tasks: Int
+    let images_created: Int
+    var totals: BoardTotals { BoardTotals(score: score, availability_seconds: availability_seconds, credits_used: credits_used,
+                                        completed_tasks: completed_tasks, images_created: images_created) }
+}
+struct BoardEntry: Decodable {
+    let rank: Int
+    let nickname: String
+    let score: Int
+    let availability_seconds: Double
+    let credits_used: Int
+    let completed_tasks: Int
+    let images_created: Int
+    let is_you: Bool
+    var totals: BoardTotals { BoardTotals(score: score, availability_seconds: availability_seconds, credits_used: credits_used,
+                                        completed_tasks: completed_tasks, images_created: images_created) }
+}
+struct WeeklyBoard: Decodable {
+    let week_start: Double
+    let week_end: Double
+    let server_time: Double
+    let enabled: Bool
+    let nickname: String
+    let personal: BoardSelf
+    let entries: [BoardEntry]
+    let member_count: Int
+    let metric: BoardMetric
+    enum CodingKeys: String, CodingKey {
+        case week_start, week_end, server_time, enabled, nickname, entries, member_count, metric
+        case personal = "self"
+    }
+    var weeklyTotals: BoardTotals { personal.totals }
+    var weekLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        return "\(formatter.string(from: Date(timeIntervalSince1970: week_start))) – \(formatter.string(from: Date(timeIntervalSince1970: week_end - 1))) · UTC"
+    }
+}
+/// A new selection or profile update invalidates older successes and failures.
+/// Authentication changes also reset this gate and clear all displayed board data.
+struct BoardRequestGate {
+    private(set) var revision = 0
+    mutating func begin() -> Int { revision += 1; return revision }
+    mutating func invalidate() { revision += 1 }
+    func accepts(_ request: Int) -> Bool { request == revision }
+}

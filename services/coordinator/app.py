@@ -48,6 +48,11 @@ class Login(Strict):
     client_name: str | None = Field(default=None, max_length=80)
 
 
+class LeaderboardProfile(Strict):
+    enabled: bool
+    nickname: str = Field(min_length=1, max_length=24)
+
+
 class Limits(Strict):
     cpu_threads: int = Field(default=2, ge=1, le=8)
     max_pixels: Literal[65536, 147456, 262144] = 262144
@@ -234,6 +239,14 @@ def create_app(data_dir=None):
         result['agent'] = agent.status()
         result['generation'] = cloud_images.status()
         return result
+
+    @app.get('/api/leaderboard')
+    def leaderboard(metric: Literal['overall','availability','credits','work'] = 'overall', user=Depends(owner)):
+        return store.leaderboard(user['id'], metric)
+
+    @app.patch('/api/leaderboard/profile')
+    def leaderboard_profile(body: LeaderboardProfile, user=Depends(owner)):
+        return store.leaderboard_profile(user['id'], body.enabled, body.nickname)
 
     @app.post('/api/devices')
     def register(body: DeviceRegistration,user=Depends(owner)):

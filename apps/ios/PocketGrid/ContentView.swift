@@ -4,8 +4,8 @@ import AVFoundation
 import CoreImage.CIFilterBuiltins
 
 private enum GridStyle {
-    static let orange = Color(red: 195.0 / 255, green: 68.0 / 255, blue: 0)
-    static let actionInk = Color.white
+    static let orange = Color(red: 1, green: 90.0 / 255, blue: 9.0 / 255)
+    static let actionInk = ink
     static let background = adaptive(0xF4F6F8, dark: 0x1C1E21)
     static let panel = adaptive(0xF5F6F8, dark: 0x282C31)
     static let inset = adaptive(0xE5E7EB, dark: 0x171A1E)
@@ -54,12 +54,12 @@ private struct GridPrimaryButton: ButtonStyle {
             .padding(.horizontal, 16).padding(.vertical, 5)
             .background {
                 ClaySurface(shape: Capsule(), recessed: configuration.isPressed,
-                            color: GridStyle.orange, compact: true)
+                            color: GridStyle.panel, compact: true)
                     .overlay(Capsule().fill(.black.opacity(configuration.isPressed ? 0.08 : 0)))
             }
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
-            .overlay(Capsule().strokeBorder(contrast == .increased ? GridStyle.actionInk.opacity(0.7) : .clear, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(contrast == .increased ? GridStyle.ink : GridStyle.orange, lineWidth: 2))
             .opacity(isEnabled ? 1 : 0.45)
     }
 }
@@ -168,6 +168,7 @@ struct ContentView: View {
                 TabView {
                     CreateView().tabItem { Label("Create", systemImage: "photo.fill") }
                     ContributeView().tabItem { Label("Contribute", systemImage: "cpu.fill") }
+                    LeaderboardView().tabItem { Label("Leaderboard", systemImage: "trophy.fill") }
                     ActivityView().tabItem { Label("Activity", systemImage: "bell.fill") }
                 }
             } else { JoinView() }
@@ -813,5 +814,248 @@ private struct VerificationShimmer: View {
                 }
             }
         }.allowsHitTesting(false).accessibilityHidden(true)
+    }
+}
+
+
+/// Weekly progress has a quiet personal space and an explicitly public board.
+private struct LeaderboardView: View {
+    @EnvironmentObject private var grid: GridModel
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.scenePhase) private var scenePhase
+    @ScaledMetric(relativeTo: .title2) private var goalRingSize = 96
+    @State private var nickname = ""
+    @State private var editingNickname = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 28) {
+                    header
+                    if !grid.boardUnavailable { metrics }
+                    if let message = grid.boardError {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(message).font(.subheadline)
+                            Button("Try again") { Task { await grid.loadLeaderboard() } }.frame(minHeight: 44)
+                                .disabled(grid.boardSaving)
+                        }.gridPanel().accessibilityElement(children: .contain)
+                    }
+                    if grid.boardUnavailable {
+                        boardState("Board coming soon", detail: "This grid needs an update.", symbol: "trophy")
+                    } else if let board = grid.leaderboard {
+                        personalProgress(board)
+                        boardList(board)
+                        participation(board)
+                    } else if grid.boardLoading {
+                        ProgressView("Loading weekly totals…").frame(maxWidth: .infinity).padding(32)
+                    }
+                }.padding(24).frame(maxWidth: 580).frame(maxWidth: .infinity)
+            }.background(GridStyle.background)
+                .navigationTitle("Leaderboard").navigationBarTitleDisplayMode(.inline)
+                .refreshable { await grid.loadLeaderboard() }
+                .task(id: scenePhase) {
+                    guard scenePhase == .active else { return }
+                    while !Task.isCancelled {
+                        await grid.loadLeaderboard()
+                        do { try await Task.sleep(for: .seconds(15)) } catch { return }
+                    }
+                }
+                .onChange(of: grid.accountID) { _, _ in nickname = ""; editingNickname = false }
+                .onChange(of: grid.leaderboard?.nickname) { _, value in
+                    if !editingNickname { nickname = value ?? "" }
+                }
+                .onChange(of: grid.leaderboard?.enabled) { _, _ in editingNickname = false }
+                .onChange(of: grid.boardSaving) { wasSaving, saving in
+                    if wasSaving && !saving && grid.boardError == nil { editingNickname = false; nickname = grid.leaderboard?.nickname ?? "" }
+                }
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Keep the grid going.").font(.largeTitle.weight(.medium))
+            Text(grid.leaderboard?.weekLabel ?? "This week").font(.subheadline).foregroundStyle(GridStyle.muted)
+            if grid.boardLoading, grid.leaderboard != nil { ProgressView("Refreshing…").font(.caption) }
+        }
+    }
+
+    private func personalProgress(_ board: WeeklyBoard) -> some View {
+        VStack(alignment: .leading, spacing: 22) {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 18) { goalRing(board); personalHeading(board) }
+            } else {
+                HStack(alignment: .center, spacing: 20) { goalRing(board); personalHeading(board) }
+            }
+            VStack(spacing: 18) {
+                goal("Help with 3 tasks", symbol: "checkmark.seal", current: Double(board.personal.completed_tasks), target: 3,
+                     progress: "\(board.personal.completed_tasks)/3")
+                goal("Make 1 image", symbol: "photo", current: Double(board.personal.images_created), target: 1,
+                     progress: "\(board.personal.images_created)/1")
+                goal("Share for 30 min", symbol: "clock", current: board.personal.availability_seconds, target: 1800,
+                     progress: "\(BoardMetric.duration(board.personal.availability_seconds))/30 min")
+            }
+            LabeledContent("Credits used", value: board.personal.credits_used.formatted()).font(.subheadline)
+            DisclosureGroup("How points work") {
+                Text("10 per accepted task for someone else, 1 per credit paid to others or in fees, and 1 per 15 min sharing (up to 32). Refunds and payments to yourself don’t count. No credit bonus.")
+                    .font(.footnote).foregroundStyle(GridStyle.muted).padding(.top, 8)
+            }.font(.subheadline)
+        }.gridPanel()
+    }
+
+    private func personalHeading(_ board: WeeklyBoard) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("Your week").font(.headline)
+            Text(board.enabled ? (board.personal.rank.map { "Rank \($0)" } ?? "Unranked") : "Private progress")
+                .font(.title2.weight(.medium))
+            Text("\(board.personal.score) points").font(.subheadline).foregroundStyle(GridStyle.muted)
+        }
+    }
+
+    private func goalRing(_ board: WeeklyBoard) -> some View {
+        let complete = (board.personal.completed_tasks >= 3 ? 1 : 0)
+            + (board.personal.images_created >= 1 ? 1 : 0)
+            + (board.personal.availability_seconds >= 1800 ? 1 : 0)
+        return VStack(spacing: 8) {
+            ZStack {
+                Circle().stroke(GridStyle.inset, lineWidth: 9)
+                Circle().trim(from: 0, to: Double(complete) / 3)
+                    .stroke(GridStyle.orange, style: StrokeStyle(lineWidth: 9, lineCap: .round)).rotationEffect(.degrees(-90))
+                Text("\(complete)/3").font(.title2.weight(.medium)).monospacedDigit()
+            }.frame(width: goalRingSize, height: goalRingSize).padding(6)
+            Text("Goals done").font(.caption).foregroundStyle(GridStyle.muted)
+        }.accessibilityElement(children: .ignore).accessibilityLabel("Weekly goals done").accessibilityValue("\(complete) of 3")
+    }
+
+    private func goal(_ title: String, symbol: String, current: Double, target: Double, progress: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ViewThatFits(in: .horizontal) {
+                HStack { Label(title, systemImage: current >= target ? "checkmark.circle.fill" : symbol); Spacer(); Text(progress).monospacedDigit() }
+                VStack(alignment: .leading, spacing: 4) { Label(title, systemImage: current >= target ? "checkmark.circle.fill" : symbol); Text(progress).monospacedDigit() }
+            }.font(.subheadline)
+            ProgressView(value: min(max(current / target, 0), 1)).tint(GridStyle.orange)
+                .accessibilityHidden(true)
+        }.accessibilityElement(children: .ignore)
+            .accessibilityLabel(title)
+            .accessibilityValue(current >= target ? "Complete" : progress)
+    }
+
+    private var metrics: some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                metricMenu
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        ForEach(BoardMetric.allCases) { metric in
+                            Button { Task { await grid.loadLeaderboard(metric) } } label: {
+                                Text(metric.label).font(.subheadline.weight(.medium)).fixedSize(horizontal: true, vertical: false)
+                                    .foregroundStyle(grid.boardMetric == metric ? GridStyle.actionInk : GridStyle.ink)
+                                    .padding(.horizontal, 14).frame(minHeight: 46)
+                                    .background {
+                                        ClaySurface(shape: Capsule(), recessed: grid.boardMetric != metric,
+                                                    color: grid.boardMetric == metric ? GridStyle.panel : GridStyle.inset, compact: true)
+                                            .overlay(Capsule().strokeBorder(grid.boardMetric == metric ? GridStyle.orange : .clear, lineWidth: 2))
+                                    }
+                            }.buttonStyle(.plain)
+                                .accessibilityLabel("Rank by \(metric.label)")
+                                .accessibilityAddTraits(grid.boardMetric == metric ? .isSelected : [])
+                        }
+                    }
+                    metricMenu
+                }
+            }
+        }.disabled(grid.boardSaving)
+    }
+
+    private var metricMenu: some View {
+        Picker("Rank by", selection: metricSelection) {
+            ForEach(BoardMetric.allCases) { Text($0.label).tag($0) }
+        }.pickerStyle(.menu).frame(minHeight: 44).padding(.horizontal, 12)
+            .background { ClaySurface(shape: Capsule(), compact: true) }
+    }
+
+    private var metricSelection: Binding<BoardMetric> {
+        Binding(get: { grid.boardMetric }, set: { value in Task { await grid.loadLeaderboard(value) } })
+    }
+
+    private func boardList(_ board: WeeklyBoard) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            ViewThatFits(in: .horizontal) {
+                HStack { Text("This week’s grid").font(.headline); Spacer(); Text("\(board.member_count) joined").font(.caption).foregroundStyle(GridStyle.muted) }
+                VStack(alignment: .leading) { Text("This week’s grid").font(.headline); Text("\(board.member_count) joined").font(.caption).foregroundStyle(GridStyle.muted) }
+            }
+            if board.entries.isEmpty {
+                Text("No one has joined yet.").foregroundStyle(GridStyle.muted)
+                Text("Your weekly progress stays private until you join.").font(.subheadline).foregroundStyle(GridStyle.muted)
+            } else {
+                ForEach(Array(board.entries.enumerated()), id: \.offset) { _, entry in
+                    boardRow(entry, metric: board.metric)
+                }
+            }
+        }.gridPanel()
+    }
+
+    private func boardRow(_ entry: BoardEntry, metric: BoardMetric) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            Text("\(entry.rank)").font(.headline.monospacedDigit())
+                .foregroundStyle(entry.rank == 1 ? GridStyle.actionInk : GridStyle.ink)
+                .padding(10).frame(minWidth: 44, minHeight: 44)
+                .background { ClaySurface(shape: Circle(), color: GridStyle.panel, compact: true)
+                    .overlay(Circle().strokeBorder(entry.rank == 1 ? GridStyle.orange : .clear, lineWidth: 2)) }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(entry.nickname).font(.headline).fixedSize(horizontal: false, vertical: true)
+                if entry.is_you { Text("You").font(.caption).foregroundStyle(GridStyle.muted) }
+                if typeSize.isAccessibilitySize {
+                    Text("\(metric.value(entry.totals)) \(metric.unit)").font(.subheadline).monospacedDigit()
+                }
+            }
+            if !typeSize.isAccessibilitySize {
+                Spacer(minLength: 4)
+                VStack(alignment: .trailing, spacing: 5) {
+                    Text(metric.value(entry.totals)).font(.title3.weight(.medium)).monospacedDigit()
+                    Text(metric.unit).font(.caption).foregroundStyle(GridStyle.muted)
+                }.fixedSize()
+            }
+        }.padding(12)
+            .background { if entry.is_you { ClaySurface(shape: RoundedRectangle(cornerRadius: 22), recessed: true, color: GridStyle.inset, compact: true) } }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Rank \(entry.rank), \(entry.nickname)\(entry.is_you ? ", you" : "")")
+            .accessibilityValue("\(metric.value(entry.totals)) \(metric.unit)")
+    }
+
+    private func participation(_ board: WeeklyBoard) -> some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text(board.enabled ? "You’re on the board" : "Join this week").font(.headline)
+            Text("Nickname and weekly totals are visible to the grid.").font(.subheadline).foregroundStyle(GridStyle.muted)
+            if !board.enabled || editingNickname {
+                TextField("Public nickname", text: $nickname).textInputAutocapitalization(.words).autocorrectionDisabled()
+                    .font(.body).padding(16)
+                    .background { ClaySurface(shape: RoundedRectangle(cornerRadius: 18), recessed: true, color: GridStyle.inset, compact: true) }
+                    .accessibilityLabel("Public leaderboard nickname")
+                    .onChange(of: nickname) { _, value in if value.count > 24 { nickname = String(value.prefix(24)) } }
+                Button {
+                    Task { await grid.saveBoardProfile(enabled: true, nickname: nickname) }
+                } label: {
+                    HStack { Text(grid.boardSaving ? "Saving…" : board.enabled ? "Save nickname" : "Join board"); if grid.boardSaving { ProgressView().tint(GridStyle.ink) } }
+                }.buttonStyle(GridPrimaryButton()).disabled(grid.boardSaving || nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if editingNickname { Button("Cancel") { editingNickname = false; nickname = board.nickname }.frame(minHeight: 44).disabled(grid.boardSaving) }
+            } else {
+                Text(board.nickname).font(.title3.weight(.medium))
+                Button("Edit nickname") { nickname = board.nickname; editingNickname = true }.frame(minHeight: 44).disabled(grid.boardSaving)
+            }
+            if board.enabled {
+                Button("Leave board") { Task { await grid.saveBoardProfile(enabled: false, nickname: board.nickname) } }
+                    .frame(minHeight: 44).disabled(grid.boardSaving)
+            }
+        }.gridPanel()
+    }
+
+    private func boardState(_ title: String, detail: String, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Image(systemName: symbol).font(.largeTitle).foregroundStyle(GridStyle.muted).accessibilityHidden(true)
+            Text(title).font(.headline)
+            Text(detail).font(.subheadline).foregroundStyle(GridStyle.muted)
+        }.gridPanel()
     }
 }
