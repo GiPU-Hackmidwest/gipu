@@ -11,6 +11,13 @@ from tests.test_coordinator import png, request
 from tests.test_routing import grid, submit
 
 
+def latest_job(store, user):
+    # Planner traces are internal; the member snapshot omits them.
+    with store.tx() as db:
+        row = db.execute('SELECT id FROM jobs WHERE owner_id=? ORDER BY created_at DESC LIMIT 1', (user,)).fetchone()
+        return store.job(db, row['id'])
+
+
 class ScriptedModel(Model):
     """Emit SDK streaming events deterministically so actual tool execution is exercised."""
     def __init__(self, steps):
@@ -131,7 +138,7 @@ def test_sdk_failure_review_changes_real_routing_and_checks_it(grid, monkeypatch
         response('update_routing', generation_device_ids=[devices[0]], finalize_device_ids=[],
                  explanation='Move the failed image to A'), response('inspect_job')])
     assert agent.review_once(store)
-    updated = store.snapshot(user)['jobs'][0]
+    updated = latest_job(store, user)
     assert updated['plan']['review']['status'] == 'done'
     assert updated['plan']['task_routes'][first['id']]['device_ids'] == [devices[0]]
     trace = updated['plan']['reviews'][-1]['tools']
@@ -155,10 +162,10 @@ def test_sdk_terminal_review_checks_actual_receipt_without_rerouting(grid, monke
     store.complete(devices[1], generation['id'], generation['lease_id'], png(), {})
     export = store.claim(devices[1])['task']
     store.complete(devices[1], export['id'], export['lease_id'], png(True), {})
-    previous_routes = store.snapshot(user)['jobs'][0]['plan'].get('task_routes', {})
+    previous_routes = latest_job(store, user)['plan'].get('task_routes', {})
     model, _ = use_model(monkeypatch, [response('inspect_job')])
     assert agent.review_once(store)
-    job = store.snapshot(user)['jobs'][0]
+    job = latest_job(store, user)
     review = job['plan']['reviews'][-1]
     assert review['status'] == 'done'
     assert review['tools'][0]['result']['receipt']['total_charged'] == 8
@@ -182,7 +189,7 @@ def test_stale_sdk_review_cannot_change_running_work(grid, monkeypatch):
     use_model(monkeypatch, [response('inspect_job'), response('inspect_devices'),
                            advance_before_tool, response('inspect_job')])
     assert agent.review_once(store)
-    job = store.snapshot(user)['jobs'][0]
+    job = latest_job(store, user)
     errors = [t for t in job['plan']['reviews'][-1]['tools'] if t['tool'] == 'update_routing']
     assert errors[0]['result']['status_code'] == 409
     assert job['tasks'][0]['device_id'] == devices[0] and job['tasks'][0]['attempts'] == 2
@@ -203,7 +210,7 @@ def test_review_missing_inspection_is_visible_and_manual_mode_never_calls_model(
     assert model.calls == 0
     monkeypatch.setenv('POCKETGRID_AGENT_MODE', 'ollama')
     assert agent.review_once(store)
-    review = store.snapshot(user)['jobs'][0]['plan']['review']
+    review = latest_job(store, user)['plan']['review']
     assert review['status'] == 'error' and 'without inspecting' in review['error']
 
 

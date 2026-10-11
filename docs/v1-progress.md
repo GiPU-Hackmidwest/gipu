@@ -17,16 +17,16 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
 | C1 | Downloadable, easy app | todo: Mac DMG + Android APK releases | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
-| C2 | QR sign-in, same credit account | done: contract #19; review: server #20; todo: Android scanner | todo: Mac/iOS sign-in + link UI, iOS scanner |
-| C3 | Private sessions | review: server #20; privacy correction required | todo: own-only presentation |
+| C2 | QR sign-in, same credit account | review: contract + `identity.ts`, server (`feat/v1-server-identity-privacy`); todo: Android scanner, hosted deploy | todo: Mac/iOS sign-in + link UI, iOS scanner |
+| C3 | Private sessions | review: server scoping; todo: hosted deploy | todo: own-only presentation |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
 | C6 | Create images / Finish images toggles | todo: verify on Android | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
-| C7 | Activity without sensitive info | review: server #20; privacy correction required | todo: Activity presentation |
-| C8 | Device counts, no test devices | review: server #20 grid counts; todo: cleanup/deploy | todo: landscape on Mac/iOS |
+| C7 | Activity without sensitive info | review: server sanitizing | todo: Activity presentation |
+| C8 | Device counts, no test devices | review: `grid` counts (stale devices excluded); todo: hosted DB cleanup if still needed | todo: landscape on Mac/iOS |
 | C9 | Logo | blocked on Phase 0: Tauri icons | blocked on Phase 0: iOS icon, in-app mark |
 | C10 | Rename to GiPU | todo: docs, Tauri/Android names | in progress: GiPU text implemented; current icon retained pending Phase 0 |
-| C11 | Shimmer + notification, no border | done: contract #19; review: coordinator #20; todo: finishers after deploy, Android notify | todo: shimmer, iOS finalize, Mac/iOS notify |
+| C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | todo: shimmer, iOS finalize, Mac/iOS notify |
 | C12 | Replicable README | todo | review iOS/Mac sections |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
@@ -35,6 +35,43 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. Status: **todo**.
 
 ## Log
+
+### 2026-10-11 · Codex · PR #20 review correction (`fix/v1-server-privacy-review`)
+
+- The user explicitly requested review, fixes and integration of the remaining PRs. This authorizes a limited correction in Claude-owned coordinator/tests for the reproduced PR #20 privacy leak; Codex is recording the cross-workstream change here before editing.
+- Scope: replace member-facing free-form planner/event text with safe summaries, preserve useful own-device controls/status and accounting, add short-name/raw-ID/renamed-device regressions, and review migration/auth compatibility. No new dependencies, deployment, push or merge in this worktree.
+- Fixed: public plans/events now use allowlisted fields and generic summaries, including events without `device_id`; arbitrary foreign-worker metrics and planner refund reasons cannot carry device names/IDs. Internal traces are retained. Own device names/routes/metrics, sharing-expiry feedback, numeric timing/progress, balances and receipts remain available. Regression coverage includes short and renamed devices, duplicate own/foreign names, raw IDs and arbitrary planner fields.
+- Image authorization now sweeps expired leases and requires a running or completed assignment. Cancelled/expired finishers lose source access; the owning member and completed producer retain access.
+- Verification: primary coordinator environment `python -m pytest tests --ignore=tests/test_worker.py -q` passed **77**; worker environment `python -m pytest tests/test_worker.py -q` passed **33**. Migration regression preserves the original account, 90 available/10 reserved, the existing job and ledger; linking creates no new grant; a revoked legacy token stays revoked after restart. Cross-account session revocation is denied. Web **42** tests and `npm run build -- --configLoader runner` passed using existing dependencies; the runner avoids writing a Vite config temporary file into the read-only shared dependency directory. `git diff --check` passed. No deployed or physical-device check is claimed.
+- Shared type coordination: root authorized `SessionInfo.last_used_at?: number | null` to represent migrated sessions accurately, without inventing a last-use timestamp.
+- Handoff: root reviewed the fix, integrated current main including #22, and is updating PR #20. Privacy and image-access blockers are resolved by the regression-tested correction. Claude's entries below describe the submitted PR before this correction.
+
+### 2026-10-11 · Claude · coordinator V1 (branch `feat/v1-server-identity-privacy`, stacked on the contract PR)
+
+- **Identity (C2).**
+  - New `user_sessions`, `link_codes` and `credentials` tables. Existing `users.token` values migrate idempotently into sessions, so current signed-in apps keep working.
+  - `POST /sessions` takes optional `name`/`client_name` (default `Guest XXXX`) and returns `session_id`.
+  - New endpoints: link codes (10 characters, 120 s, single use, a new code replaces the old), `POST /sessions/link`, `POST /account/credentials` (scrypt; changing a login needs the current password), `POST /sessions/login`, `GET /sessions`, `DELETE /sessions/{id}` and `POST /sessions/logout`.
+  - Link and login allow 5 failures per client address per minute, then return 429. The limit is in memory and resets on restart. `deploy/Dockerfile` now passes `--forwarded-allow-ips '*'` so the limit sees real client addresses behind Caddy; only Caddy can reach the port.
+- **Privacy (C3/C7/C8).**
+  - `/state` returns only the caller's jobs, devices and events, plus `grid` counts of online devices. Offline test devices drop out of the counts.
+  - Jobs in snapshots, `POST /jobs`, cancel and `GET /jobs/{id}` go through `public_job`, which removes other members' `device_id`s, filters routes, drops planner `tools`/`reviews` traces and replaces other members' device names in explanations.
+  - Events: other contributors' `credits_earned` is dropped. Another member's device shows as "A grid laptop started work on your images". Your own device's work on someone else's job keeps no `job_id`.
+  - `GET /jobs/{id}` and `GET /images/{id}` are limited to the owner or a device assigned to the task (a finisher can read its source).
+  - The Strands planner now reads `store.grid_devices()` instead of the member snapshot.
+- **Finalize (C11).** The coordinator accepts pixel-identical output. It still accepts the teal frame unless `POCKETGRID_ACCEPT_LEGACY_FRAME=0`. `images[].verified` is set. The finishers (Python, browser, iOS) still draw the frame. Switch them only **after** this coordinator is deployed, because today's hosted coordinator rejects frameless output.
+- **Verification.**
+  - Coordinator suite: `.venv/bin/python -m pytest tests -q`, excluding the live/container harnesses and `test_worker.py`. 70 passed, 15 of them new in `tests/test_identity.py` and `tests/test_privacy.py`.
+  - Worker suite: `workers/python/.venv/bin/python -m pytest tests/test_worker.py -q` passed 33.
+  - Three `test_agent.py` tests now read planner traces from the internal job record, because the member snapshot strips them.
+  - A live HTTP check against a local uvicorn with a fresh database confirmed: anonymous join, link to the same user, a second account seeing no jobs or devices, the session list, logout returning 401 and the CORS `DELETE` preflight.
+  - Not run: the Docker/Caddy deployment, the live/container harnesses and any device.
+- **Not deployed.** The hosted coordinator still runs the old code. Redeploying it is a separate, confirmed step.
+- **Handoff (Codex):**
+  - After this merges, "Devices in the grid" in `App.tsx` lists only the viewer's own devices. Switch to `state.grid`.
+  - "Shared with grid members" is now false; please remove it.
+  - Task rows for other members have `device_id: null`; use `device_kind`.
+
 
 ### 2026-10-11 · Codex · simple controls verified (PR #22 · `feat/v1-simple-controls`)
 

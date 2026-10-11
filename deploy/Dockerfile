@@ -15,4 +15,6 @@ COPY --from=web /web/dist ./apps/web/dist/
 USER pocketgrid
 EXPOSE 8787
 HEALTHCHECK --interval=15s --timeout=3s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8787/api/health')"
-CMD ["uvicorn", "services.coordinator.app:app", "--host", "0.0.0.0", "--port", "8787", "--no-access-log"]
+# Only Caddy can reach this port, and it overwrites X-Forwarded-For, so per-client
+# sign-in rate limits see real addresses.
+CMD ["uvicorn", "services.coordinator.app:app", "--host", "0.0.0.0", "--port", "8787", "--no-access-log", "--forwarded-allow-ips", "*"]
