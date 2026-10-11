@@ -357,7 +357,7 @@ final class GridModel: ObservableObject {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         guard settings.authorizationStatus == .authorized else { return }
         let content = UNMutableNotificationContent()
-        content.title = "PocketGrid"; content.body = event.message; content.sound = .default
+        content.title = "GiPU"; content.body = event.message; content.sound = .default
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: String(event.id), content: content, trigger: nil))
     }
 
