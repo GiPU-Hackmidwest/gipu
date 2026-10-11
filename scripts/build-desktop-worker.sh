@@ -10,6 +10,17 @@ PYINSTALLER_VERSION="${PYINSTALLER_VERSION:-6.22.3}"
 
 command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/" >&2; exit 1; }
 
+# Concurrent builds share the work directory and corrupt each other's output.
+# mkdir is atomic, and macOS ships no flock.
+LOCK="$ROOT/.cache/desktop-worker-build.lock"
+mkdir -p "$ROOT/.cache"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  echo "Another desktop worker build is running (lock: $LOCK)." >&2
+  echo "Wait for it to finish, or remove the lock if no build is running." >&2
+  exit 1
+fi
+trap 'rmdir "$LOCK"' EXIT
+
 # A separate environment keeps PyInstaller out of the worker's development venv.
 uv venv --quiet --allow-existing --python 3.12 "$BUILD/venv"
 uv pip install --quiet --python "$BUILD/venv/bin/python" \
