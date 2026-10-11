@@ -13,3 +13,10 @@ export async function stopAndSignOut({ stops, legacy, revoke, clear }: {
   }
   await clear();
 }
+
+/** Only a live, current dashboard may begin automatic revoked-session cleanup once. */
+export function shouldRecoverSession(status: number | undefined, state: {
+  mounted: boolean; current: boolean; expired: boolean; leaving: boolean;
+}): boolean {
+  return status === 401 && state.mounted && state.current && !state.expired && !state.leaving;
+}

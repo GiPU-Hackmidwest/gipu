@@ -152,13 +152,20 @@ jobs:
           cd out
           shopt -s nullglob
           files=(*.apk *.dmg)
-          sha256sum "${files[@]}" > SHA256SUMS.txt
+          (( ${#files[@]} > 0 )) || { echo "::error::No installers were built"; exit 1; }
           tag="v$VERSION"
           if draft=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null); then
             # Only ever add files to a draft; a published release is left untouched.
             [[ "$draft" == true ]] || { echo "::error::$tag is already published; use a new version."; exit 1; }
+            # Keep hashes for an earlier platform build when extending this draft.
+            if [[ $(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets | length') -gt 0 ]]; then
+              gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir . --skip-existing
+            fi
+            checksum_files=(*.apk *.dmg)
+            sha256sum "${checksum_files[@]}" > SHA256SUMS.txt
             gh release upload "$tag" "${files[@]}" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --clobber
           else
+            sha256sum "${files[@]}" > SHA256SUMS.txt
             gh release create "$tag" "${files[@]}" SHA256SUMS.txt --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
               --title "GiPU $tag" --generate-notes
           fi

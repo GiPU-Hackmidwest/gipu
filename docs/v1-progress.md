@@ -16,16 +16,16 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: local release packaging (#27); DMG + signed APK built locally; publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
 | C6 | Create images / Finish images toggles | done: Finish images verified on Android emulator | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
-| C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
+| C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 83-test integrated regression pass complete |
 | C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
-| C10 | Rename to GiPU | review: Tauri `productName`/window title and Android label are GiPU (`ci/v1-releases`); bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
+| C10 | Rename to GiPU | done: GiPU Tauri product/window and Android names merged #27; bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
 | C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | review: iOS runtime now uses invisible encoder after confirmed deployment; pixel/strict-settlement checks and simulator build pass; physical phone pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
@@ -35,6 +35,13 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · manual workflow integration (PR #33)
+
+- Arboy explicitly approved restoring the workflow and requested this merge. This supersedes the earlier local-only restriction. Preserve the manual Android/Mac build and optional draft-release path.
+- Resolved the progress-log conflict by retaining both teams’ entries and the latest UI verification. No app, worker, signing identity or contribution behavior changes.
+- Review also fixed partial-platform draft updates: checksums include installers already attached to the draft. Published releases remain untouched.
+- Verification: YAML parsed with only `workflow_dispatch`; every embedded shell step passed `bash -n`; whitespace checks passed. Handoff: enable Release after merge. A hosted build has not been dispatched by this review; publication remains manual.
 
 ### 2026-10-11 · Claude · manual-only release workflow (branch `ci/manual-release-workflow`)
 
@@ -52,6 +59,26 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
   - The build steps match the version locally verified earlier (DMG 266 MB VALID; signed APK verified).
   - **Not run on GitHub.** The workflow is still `disabled_manually` from the earlier removal and must be re-enabled once after merge: `gh workflow enable Release`.
 - **Handoff (Codex/Arboy):** please don't remove this workflow; the guard rule is in AGENTS.md. Signing secrets stay optional; the commands in `docs/releasing.md` set them from the local key without printing anything.
+
+### 2026-10-11 · Codex · local release handoff (`docs/local-release-handoff`)
+
+- PRs #27–#31 are merged through main `3e1c6e9`: local release packaging and GiPU names, Docker brand assets, frameless finishers, native iOS cutover, and account-link/revoked-session recovery. The primary checkout is synchronized and its personal signing diff is unchanged. No open PR remains at this check. Builds and packaging remain local; publication is a separate manual step.
+- **Actions cleanup:** the release workflow file is deleted and its repository state is `disabled_manually`. Three old artifacts (about **547 MB**) were downloaded, ZIP-verified and SHA-256 recorded, then deleted remotely; their local copies remain preserved. The remote artifact count is now zero. Two obsolete, reproducible npm CI caches (57.6 MB) were also deleted; the remote cache count is zero. No current bill or charge has been verified.
+- **Verification:** **83 frontend**, **77 coordinator** and **34 worker** tests passed. The iOS simulator app build and strict fixture settlement passed: the native invisible encoder retained all RGB pixels, settled with legacy acceptance disabled, and preserved duplicate-completion/Pause behavior. These fixtures are not physical-phone or live diffusion evidence.
+- A fresh local PyInstaller worker and bundled Mac debug app built successfully before #31. The final integrated `3e1c6e9` native Mac debug bundle, including #31, also passed and measured **671 MiB**; all **24 worker symlinks** match the fresh frozen source. This documentation-only handoff adds no new build claim beyond those results.
+- **Remaining:** physical camera QR decoding and phone finishing, release publication, and comprehensive accessibility/device validation. Keep coordinator legacy acceptance for older installed apps. Local installers/build evidence do not imply a published or notarized release.
+
+### 2026-10-11 · Codex · account recovery runtime check (`fix/account-link-handoff`)
+
+- Final integrated frontend tests: 83 passed; TypeScript/production build passed. In a real browser against an isolated local coordinator, a new test account stored the session label `Browser`. Account showed the loopback warning and disabled QR creation until a phone-reachable grid address is supplied. Revoking only that test session caused automatic return to sign-in; reload stayed signed out. This check did not enable contribution or create an image job; worker stop/clear ordering and retry behavior are covered by lifecycle tests.
+- Scope remains minimal: usable QR address, visible/focused incoming-link confirmation, device session labels and safe revoked-session recovery. No hosted state, signing or CI change.
+
+### 2026-10-11 · Codex · account link handoff polish (`fix/account-link-handoff`)
+
+- **Coordination:** Arboy requested the three UX corrections observed during PR #27 review: phone-unreachable loopback QR addresses, an off-screen incoming-link prompt, and indistinguishable session labels. Root explicitly authorized a backward-compatible optional `clientName` argument in Claude-owned `identity.ts` plus its regression test; the existing `/sessions` contract already accepts `client_name`.
+- **Implemented:** loopback QR links require a manually supplied Wi-Fi/hosted address for the same grid; incoming signed-in links scroll into view and receive focus; new session labels identify Mac, Android or Browser. No guessed addresses or protocol/dependency changes.
+- Root additionally authorized revoked `/state` recovery: only a current live `ApiError(401)` initiates awaited worker shutdown and secure sign-out once. Failed cleanup retains the mounted controller and credentials with a focused retry action. Ordinary errors and stale responses never clear credentials.
+- **Verification:** 83/83 frontend tests passed, including loopback address, platform label, stale/duplicate 401, and secure-delete retry regressions; TypeScript and Vite production build passed. Reused identical-lockfile dependencies locally. No CI runs, hosted mutations or new dependency downloads. Native/UI runtime recheck remains with root.
 
 ### 2026-10-11 · Codex · iOS frameless runtime (`feat/ios-invisible-finalize`)
 

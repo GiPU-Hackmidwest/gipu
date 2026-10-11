@@ -75,4 +75,4 @@ Scanning an invite QR alone would create a new account every time and lose credi
 - Explicit opt-in still applies: turning on **Create images** or **Finish images** is the explicit Start. The first-time 1 GB model download still asks first. Pause, session expiry, lease fencing and exactly-once settlement are unchanged.
 - Mobile background contribution is still not assumed. Finishing on phones is foreground-only.
 
-- Release builds run locally by default (Arboy’s cost constraint). Sithabo also approved a manual-only GitHub workflow (no automatic triggers) for on-request builds; see docs/releasing.md.
+- Release builds run locally by default (Arboy’s cost constraint). Sithabo and Arboy also approved a manual-only GitHub workflow (no automatic triggers) for on-request builds; see docs/releasing.md.
