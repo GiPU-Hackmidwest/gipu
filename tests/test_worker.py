@@ -24,14 +24,19 @@ def source_png():
     return original, output.getvalue()
 
 
-def test_finalize_preserves_every_interior_pixel_and_frames_edges():
+def test_finalize_returns_every_pixel_unchanged_with_no_border():
     original, source = source_png()
     result = Image.open(io.BytesIO(worker.finalize_image(source)))
-    assert result.size == original.size
-    for y in range(result.height):
-        for x in range(result.width):
-            expected = worker.FRAME if x < 4 or y < 4 or x >= result.width - 4 or y >= result.height - 4 else original.getpixel((x, y))
-            assert result.getpixel((x, y)) == expected
+    assert result.format == "PNG" and result.size == original.size
+    assert result.convert("RGB").tobytes() == original.tobytes()
+
+
+def test_finalize_refuses_a_non_png_source():
+    original, _ = source_png()
+    jpeg = io.BytesIO()
+    original.save(jpeg, format="JPEG")
+    with pytest.raises(ValueError):
+        worker.finalize_image(jpeg.getvalue())
 
 
 def test_paused_work_cannot_produce_a_result():
