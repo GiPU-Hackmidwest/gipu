@@ -33,7 +33,7 @@ From a clean local checkout, upload only committed files for the chosen commit. 
 git archive --format=tar.gz <commit> | ssh root@HOST 'mkdir -p /opt/pocketgrid && tar -xzf - -C /opt/pocketgrid && echo <commit> > /opt/pocketgrid/DEPLOYED_COMMIT'
 ```
 
-On the server, create `/opt/pocketgrid/deploy/.env` once with mode 0600: the domain, `POCKETGRID_JOIN_CODE=$(openssl rand -hex 16)` and the planner settings. Edit it over SSH only; never paste the join code or provider key into the repository or a PR. Then run, from `/opt/pocketgrid`:
+On the server, run `openssl rand -hex 16` in the shell to generate the join code. Create `/opt/pocketgrid/deploy/.env` once with mode 0600 and set `POCKETGRID_JOIN_CODE` to the resulting hexadecimal value, along with the domain and planner settings. Compose `.env` files do not execute shell commands; do not put the generation command in the file. Edit it over SSH only; never paste the join code or provider key into the repository or a PR. Then run, from `/opt/pocketgrid`:
 
 ```sh
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
@@ -50,7 +50,7 @@ All commands run from `/opt/pocketgrid` with `--env-file deploy/.env -f deploy/c
 - **Change settings** (join code, planner, Akamai key): edit `deploy/.env`, then `up -d` to recreate the coordinator. Changing the join code does not revoke existing sessions.
 - **Backup:** stop the coordinator, copy the volume, start again. The SQLite file and `images/` must be copied together:
   `docker compose ... stop coordinator && docker run --rm -v deploy_grid-data:/data -v /root/backups:/out alpine tar -czf /out/grid-$(date +%F-%H%M).tgz -C /data . && docker compose ... start coordinator`
-- **Restore:** stop the coordinator, extract a backup into the `deploy_grid-data` volume the same way, then start it.
+- **Restore:** stop the coordinator and preserve the current volume for rollback. Validate the backup, then extract its database and images together into a new, empty volume; preserve ownership for the coordinator user (UID/GID 10001). Point the Compose `grid-data` volume at that restored volume with an override specifying `external: true` and its `name`, and include that override in subsequent Compose commands before starting the coordinator. Never extract over an existing database directory: leftover SQLite WAL files can replay changes that are not in the backup.
 - **Certificates:** Caddy stores them in `caddy-data`. Keep that volume; deleting it forces reissue and can hit Let's Encrypt rate limits.
 - **SSH firewall:** contributor and client traffic only needs 80/443. Restrict the port 22 rule to known addresses when possible.
 
