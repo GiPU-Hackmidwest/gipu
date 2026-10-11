@@ -36,7 +36,7 @@ Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. St
 
 ## Log
 
-### 2026-10-11 · Codex · simple controls verified (`feat/v1-simple-controls`)
+### 2026-10-11 · Codex · simple controls verified (PR #22 · `feat/v1-simple-controls`)
 
 - Completed C4/C5/C6/C13/C14/C15 implementation and C10 in-app text. No dependency added. Technical controls are hidden by default on a persisted Developer options page; contribution stays an explicit choice.
 - **Verification:** final production frontend and bundled debug Mac builds passed; all 50 frontend tests passed (including 8 contribution lifecycle/acknowledgement tests and 9 contract tests). In the actual Mac app, Create images and Finish images enabled work, persisted through navigation and Developer options changes, and paused through their switches. A local real image completed with receipt `10 = 7 + 1 + 2`. The final rebuilt Mac switch acknowledges Start/Pause immediately; quitting/reopening leaves sharing off. Browser Developer options persisted across reload. The 320 px layout has no horizontal overflow; account controls now remain a compact row. iOS build and harness evidence/limitations are recorded below.
