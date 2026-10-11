@@ -6,6 +6,7 @@ import CoreImage.CIFilterBuiltins
 private enum GridStyle {
     static let orange = Color(red: 1, green: 90.0 / 255, blue: 9.0 / 255)
     static let actionInk = ink
+    static let primaryInk = Color(red: 28.0 / 255, green: 30.0 / 255, blue: 33.0 / 255)
     static let background = adaptive(0xF4F6F8, dark: 0x1C1E21)
     static let panel = adaptive(0xF5F6F8, dark: 0x282C31)
     static let inset = adaptive(0xE5E7EB, dark: 0x171A1E)
@@ -49,12 +50,12 @@ private struct GridPrimaryButton: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.headline).foregroundStyle(GridStyle.actionInk).tint(GridStyle.actionInk)
+        configuration.label.font(.headline).foregroundStyle(GridStyle.primaryInk).tint(GridStyle.primaryInk)
             .frame(maxWidth: .infinity, minHeight: 48)
             .padding(.horizontal, 16).padding(.vertical, 5)
             .background {
                 ClaySurface(shape: Capsule(), recessed: configuration.isPressed,
-                            color: GridStyle.panel, compact: true)
+                            color: GridStyle.orange, compact: true)
                     .overlay(Capsule().fill(.black.opacity(configuration.isPressed ? 0.08 : 0)))
             }
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
@@ -1037,7 +1038,7 @@ private struct LeaderboardView: View {
                 Button {
                     Task { await grid.saveBoardProfile(enabled: true, nickname: nickname) }
                 } label: {
-                    HStack { Text(grid.boardSaving ? "Saving…" : board.enabled ? "Save nickname" : "Join board"); if grid.boardSaving { ProgressView().tint(GridStyle.ink) } }
+                    HStack { Text(grid.boardSaving ? "Saving…" : board.enabled ? "Save nickname" : "Join board"); if grid.boardSaving { ProgressView().tint(GridStyle.primaryInk) } }
                 }.buttonStyle(GridPrimaryButton()).disabled(grid.boardSaving || nickname.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if editingNickname { Button("Cancel") { editingNickname = false; nickname = board.nickname }.frame(minHeight: 44).disabled(grid.boardSaving) }
             } else {

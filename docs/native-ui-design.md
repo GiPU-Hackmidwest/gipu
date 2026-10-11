@@ -6,7 +6,7 @@ V1 guide, October 11, 2026. Codex owns Mac/iOS presentation; Claude owns the ser
 
 Use **GiPU** and the supplied in-app mark on Mac/iOS. PR #23 delivered `brand/` and Tauri/Android icons; native SwiftUI AppIcon and mark assets are now implemented. Bundle identifiers and environment names stay unchanged. C4/C5/C6/C13/C14/C15 are implemented in merged PR #22. Merged work through main `3e1c6e9` includes account/privacy presentation, anonymous counts, verification states, brand assets and Android adapters. PR #27 also completed GiPU Tauri product/window and Android naming. Release publication remains a separate manual handoff. Review and rollout limits are tracked below.
 
-Primary actions use neutral clay surfaces with readable ink labels and the logo orange as an accent. **Developer options** is a separate page, off by default and remembered locally. CPU threads, largest image, measured usage, worker paths and pairing tokens, plus plan/device diagnostics, belong there. Technical settings must retain their existing values when hidden; opening or closing the page cannot start or stop contribution. Keep ordinary receipts and usable failure messages in the main journey.
+Primary actions retain solid logo-orange fills with readable dark labels; score panels remain neutral clay. **Developer options** is a separate page, off by default and remembered locally. CPU threads, largest image, measured usage, worker paths and pairing tokens, plus plan/device diagnostics, belong there. Technical settings must retain their existing values when hidden; opening or closing the page cannot start or stop contribution. Keep ordinary receipts and usable failure messages in the main journey.
 
 Contribute presents separate **Create images** and **Finish images** cards, using responsive columns on wide screens and a simple stack on narrow screens. The public controls are plain toggles: turning one on is the explicit Start, and turning it off pauses. First-time model download still asks before fetching roughly 1 GB; downloading or connecting alone must not silently enable work. Retain the connected/paused distinction and native disconnect behavior, with the Mac worker controller mounted across navigation. iOS exposes Finish images and remains foreground-only. The desktop sidebar becomes more compact and orderly. Remove the About this grid panel on both platforms.
 
@@ -18,7 +18,7 @@ The working prototype put requesting, contribution controls, setup instructions 
 
 The supplied three-screen parking reference uses soft gray surfaces, large restrained sans-serif type, rounded sculptural panels, floating pill controls and a single vivid orange action. The revised direction gives PocketGrid a spatial device landscape: simple hardware silhouettes summarize live grid device availability on large smooth surfaces, with controls close to their subject. A contribution arc reflects the real remaining session time from server expiry. Device state, availability and time must come from live data; decorative motion must not suggest work occurred. The prompt and finished image remain prominent. Small screens prioritize the task itself. Dark mode uses darker neutral surfaces with the same orange accent. The native Mac debug app has been built and visually inspected; verification scope is recorded below.
 
-Use the system sans-serif stack on Mac/web and native SwiftUI fonts on iOS. Use direct destination titles rather than promotional slogan headers. Numeric credits align clearly, and supporting labels stay secondary. Avoid filling the screen with uniform dashboard cards: use scale, open space, the live device landscape and a focused control surface to establish hierarchy. Preserve readable contrast instead of copying the reference's faint gray text; action labels use neutral clay surfaces; the logo orange marks emphasis. Native iOS tabs, forms, disclosure groups and share controls keep the app familiar. Do not recreate a phone frame or parking imagery inside the product.
+Use the system sans-serif stack on Mac/web and native SwiftUI fonts on iOS. Use direct destination titles rather than promotional slogan headers. Numeric credits align clearly, and supporting labels stay secondary. Avoid filling the screen with uniform dashboard cards: use scale, open space, the live device landscape and a focused control surface to establish hierarchy. Preserve readable contrast instead of copying the reference's faint gray text; primary actions use the exact logo orange with dark labels. Native iOS tabs, forms, disclosure groups and share controls keep the app familiar. Do not recreate a phone frame or parking imagery inside the product.
 
 ## Clay material refinement
 
@@ -46,7 +46,7 @@ Use **Create images** and **Finish images** for contribution toggles, with conci
 
 ## Shared tokens and contrast
 
-Arboy’s October 11 refinement restores the exact logo orange as an accent and puts action labels on neutral clay. Mac/browser controls have been inspected; iOS builds passed, while rendered V1 and comprehensive accessibility checks remain outstanding. Light colors align across web and iOS; each platform has a distinct adaptive dark palette:
+Arboy’s October 11 refinement restores the exact logo orange as an accent and retains orange primary actions with dark labels and clay score surfaces. Mac/browser controls have been inspected; iOS builds passed, while rendered V1 and comprehensive accessibility checks remain outstanding. Light colors align across web and iOS; each platform has a distinct adaptive dark palette:
 
 | Token | Light web/iOS | Dark web | Dark iOS |
 | --- | --- | --- | --- |
@@ -56,8 +56,8 @@ Arboy’s October 11 refinement restores the exact logo orange as an accent and 
 | Main text | `#1C1E21` | `#F1F3F6` | `#F1F3F5` |
 | Secondary text | `#606770` | `#B4BBC6` | `#ABB3BD` |
 | Brand accent | `#FF5A09` | `#FF5A09` | `#FF5A09` |
-| Action surface | `#F5F6F8` | `#272B31` | `#282C31` |
-| Action text | `#1C1E21` | `#F1F3F6` | `#F1F3F5` |
+| Primary action | `#FF5A09` | `#FF5A09` | `#FF5A09` |
+| Primary action text | `#1C1E21` | `#1C1E21` | `#1C1E21` |
 
 Calculated sRGB relative-luminance contrast for the opaque token pairs:
 
@@ -74,7 +74,7 @@ Calculated sRGB relative-luminance contrast for the opaque token pairs:
 | Dark iOS secondary text / surface | 6.63:1 |
 | Dark iOS secondary text / canvas | 7.89:1 |
 
-Normal-size action labels use the neutral surface/text pairs above. Orange `#FF5A09` is reserved for borders, progress strokes and small emphasis; white text on that orange does not meet 4.5:1 and must not be used. Small orange rank badges use dark ink (5.34:1). These token calculations do not establish a full accessibility audit: opacity, shadows, disabled/pressed states and actual rendered combinations require inspection.
+Primary labels use dark ink on logo orange (5.34:1), including in dark mode. White text on `#FF5A09` does not meet 4.5:1 and must not be used. Secondary controls and score panels use neutral clay with adaptive ink. These token calculations do not establish a full accessibility audit: opacity, shadows, disabled/pressed states and actual rendered combinations require inspection.
 
 Web controls have at least 44px height, visible keyboard focus, reduced-motion handling and a stronger-border option for increased contrast. iOS uses native controls and Dynamic Type. Status always includes words rather than relying on color. Confirm keyboard order, VoiceOver labels, large text, light/dark modes and narrow layouts during rendered QA.
 

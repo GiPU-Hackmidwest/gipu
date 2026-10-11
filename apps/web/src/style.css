@@ -91,8 +91,8 @@ input, select, textarea { background: var(--canvas); box-shadow: var(--clay-inse
 
 /* V1: quiet navigation, explicit contribution switches, advanced controls on their own page. */
 :root { --accent: #ff5a09; --accent-ink: #1c1e21; }
-/* Brand orange is an accent; labels sit on neutral clay for readable contrast. */
-button { background: var(--surface); color: var(--ink); border-bottom: 2px solid var(--accent); box-shadow: var(--clay-floating); }
+/* Primary actions keep the official logo orange with readable dark labels. */
+button { background: var(--accent); color: var(--accent-ink); box-shadow: inset 0 2px 2px #ffffff45, inset 0 -3px 5px #a63a0824, 3px 5px 10px #a63a081c; }
 button { box-shadow: 3px 5px 10px #7d2c001c; }
 button:hover:not(:disabled) { box-shadow: 4px 7px 14px #7d2c0026; }
 button:active:not(:disabled) { box-shadow: inset 2px 3px 6px #57200040; }
