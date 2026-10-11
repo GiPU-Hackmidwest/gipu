@@ -98,7 +98,7 @@ The Android workstream owns native credentials, notifications, save/share, lifec
 
 ### Current integrated verification and local release handoff
 
-Main `3e1c6e9` includes PRs #27–#31. Checks passed: 83 frontend, 77 coordinator and 34 worker tests; native iOS simulator build; and strict native fixture settlement with legacy acceptance disabled. The updated Mac debug bundle also passed, measured 671 MiB, and retained all 24 worker symlinks matching the fresh frozen source. A fresh PyInstaller bundle build passed before #31. Release packaging is local: the Actions workflow is deleted and manually disabled; publication remains separate. Physical QR decoding, phone finishing and comprehensive accessibility validation remain open.
+Main `3e1c6e9` includes PRs #27–#31. Checks passed: 83 frontend, 77 coordinator and 34 worker tests; native iOS simulator build; and strict native fixture settlement with legacy acceptance disabled. The updated Mac debug bundle also passed, measured 671 MiB, and retained all 24 worker symlinks matching the fresh frozen source. A fresh PyInstaller bundle build passed before #31. Local release packaging passed; PR #33 restores an approved optional manual Actions workflow. Publication remains separate. Physical QR decoding, phone finishing and comprehensive accessibility validation remain open.
 
 ### V1 account/privacy UI baseline (historical)
 

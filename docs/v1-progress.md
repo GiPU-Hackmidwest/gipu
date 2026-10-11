@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: local release packaging (#27); DMG + signed APK built locally; publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
@@ -35,6 +35,30 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · manual workflow integration (PR #33)
+
+- Arboy explicitly approved restoring the workflow and requested this merge. This supersedes the earlier local-only restriction. Preserve the manual Android/Mac build and optional draft-release path.
+- Resolved the progress-log conflict by retaining both teams’ entries and the latest UI verification. No app, worker, signing identity or contribution behavior changes.
+- Review also fixed partial-platform draft updates: checksums include installers already attached to the draft. Published releases remain untouched.
+- Verification: YAML parsed with only `workflow_dispatch`; every embedded shell step passed `bash -n`; whitespace checks passed. Handoff: enable Release after merge. A hosted build has not been dispatched by this review; publication remains manual.
+
+### 2026-10-11 · Claude · manual-only release workflow (branch `ci/manual-release-workflow`)
+
+- **Decision (Sithabo, 2026-10-11):** restore a GitHub build workflow, but manual-only. Arboy removed the automatic version for cost. This one has **no push, tag or PR triggers**; it runs only from Actions → Release → Run workflow. `AGENTS.md` (release cost constraint), `docs/v1-plan.md` and `docs/releasing.md` now record this. Adding automatic triggers or removing the workflow needs both Sithabo and Arboy.
+- **`.github/workflows/release.yml`.** Inputs:
+  - `version`;
+  - `platforms`: `android` (default, Linux only), `macos` or `both`;
+  - `draft_release`: creates a draft `v<version>` at the run's commit, or adds files to an existing draft. It refuses to touch a published release.
+
+  The build steps are the same as the earlier verified ones (the DMG step now also runs `hdiutil verify`). The decoded signing key is deleted after the build. Without the signing secrets it builds a debug-signed APK and warns.
+- **Repository variable** `GIPU_DEFAULT_GRID` is set to `https://66-228-53-243.ip.linodeusercontent.com`.
+- **Verification:**
+  - The YAML parses with `workflow_dispatch` as the only trigger.
+  - The draft-release script, run locally against a stubbed `gh`, creates a draft when none exists, uploads with `--clobber` to an existing draft, and exits 1 without calling `gh` for a published release. An Android-only run checksums just the APK.
+  - The build steps match the version locally verified earlier (DMG 266 MB VALID; signed APK verified).
+  - **Not run on GitHub.** The workflow is still `disabled_manually` from the earlier removal and must be re-enabled once after merge: `gh workflow enable Release`.
+- **Handoff (Codex/Arboy):** please don't remove this workflow; the guard rule is in AGENTS.md. Signing secrets stay optional; the commands in `docs/releasing.md` set them from the local key without printing anything.
 
 ### 2026-10-11 · Codex · local release handoff (`docs/local-release-handoff`)
 
