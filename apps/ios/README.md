@@ -176,3 +176,18 @@ From the repository root, run the dependency-free status harness:
 swiftc apps/ios/PocketGrid/Models.swift apps/ios/Tests/JobStatus.swift -o /tmp/pocketgrid-job-status
 /tmp/pocketgrid-job-status
 ```
+
+## Weekly leaderboard
+
+The **Leaderboard** tab shows private weekly progress and a public board. Public participation is off until **Join board** saves a separate nickname. **Leave board** removes the public entry. The board publishes only nicknames and weekly totals; private account names, devices, prompts and balances stay private. Metrics use accepted work for other accounts, net credits paid to other contributors plus fees, and coordinator-observed sharing time. Goals and points do not award extra sandbox credits.
+
+Deploy the coordinator with `/api/leaderboard` and `/api/leaderboard/profile` before testing the new tab. An older grid displays **Board coming soon**. From the repository root, check native contract decoding and stale-response fencing with:
+
+```sh
+xcrun swiftc apps/ios/PocketGrid/Models.swift apps/ios/Tests/Leaderboard.swift -o /tmp/gipu-leaderboard-check
+/tmp/gipu-leaderboard-check
+```
+
+Leaderboard verification (October 11, 2026): full SwiftUI source typecheck passed for the arm64 iOS 17 simulator SDK; the leaderboard decoding/response gate harness, contribution lifecycle harness and existing identity/privacy harness passed. Sandboxed packaged build attempts could not find a simulator runtime during asset compilation. The normal host Xcode **Run** subsequently built and launched the app on **iPhone 17 Pro Max / iOS 26.2**, including the final palette and polling changes. Computer-use coordinate actions failed with `noWindowsAvailable`, and the native tab bar exposed no individual accessibility targets; the leaderboard sign-in/rendered journey and physical-device behavior remain unverified.
+
+The current accent is GiPU **#FF5A09**. Primary buttons use an orange fill with constant dark `#1C1E21` text (5.34:1 contrast), including in dark appearance. Board score cards, selected metrics and rank badges remain neutral clay with orange accents. The goal ring shows the actual number of completed weekly goals (0–3). Automatic snapshot polling is quiet while offline, and an idle heartbeat no longer repeatedly raises modal errors; a sharing-session connection loss still stops work and reports the error. Manual refresh still reports failures.

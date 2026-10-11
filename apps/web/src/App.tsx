@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { Brand } from './Brand';
 import { SignInScreen } from './SignInScreen';
 import { AccountPage } from './AccountPage';
+import { Leaderboard } from './Leaderboard';
 import { sessionStore } from './sessionStorage';
 import { signOut } from './identity';
 import { shouldRecoverSession, stopAndSignOut } from './accountLifecycle';
@@ -65,7 +66,7 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true }); };
   }, [incomingLink]);
   const [state, setState] = useState<Snapshot | null>(null);
-  const [section, setSection] = useState<'create' | 'contribute' | 'activity' | 'developer' | 'account'>('create');
+  const [section, setSection] = useState<'create' | 'contribute' | 'activity' | 'leaderboard' | 'developer' | 'account'>('create');
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [section]);
   const [developerEnabled, setDeveloperEnabled] = useState(storedDeveloperOptions);
   const [developerTarget, setDeveloperTarget] = useState<HTMLDivElement | null>(null);
@@ -251,21 +252,22 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
   recoverSession.current = leaveAccount;
   const localDevice = state?.devices.find(device => device.id === localId);
   const localSharing = isSharing(localDevice, state?.server_time ?? NaN);
-  const titles = { create: 'Create', contribute: 'Contribute', activity: 'Activity', developer: 'Developer options', account: 'Account' };
+  const titles = { create: 'Create', contribute: 'Contribute', activity: 'Activity', leaderboard: 'Leaderboard', developer: 'Developer options', account: 'Account' };
   return <>{leaving && <p className="signout-status" role="status">Signing out…</p>}{expired && !leaving && <section ref={recoveryPrompt} tabIndex={-1} className="panel stack" aria-label="Sign in again"><p role="alert">Sign-in expired.</p>{leaveError && <p role="alert">{leaveError}</p>}<button onClick={() => void leaveAccount()}>Return to sign in</button></section>}<div className="shell" inert={leaving || expired}>
     <aside className="sidebar">
       <Brand />
-      <nav aria-label="Main navigation">{(['create', 'contribute', 'activity'] as const).map(item => <button key={item} className={section === item ? 'nav-item selected' : 'nav-item'} aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}><NavIcon name={item} />{titles[item]}</button>)}</nav>
+      <nav aria-label="Main navigation">{(['create', 'contribute', 'activity', 'leaderboard'] as const).map(item => <button key={item} className={section === item ? 'nav-item selected' : 'nav-item'} aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}><NavIcon name={item} /><span>{titles[item]}</span></button>)}</nav>
       <button className={`nav-item developer-link ${section === 'developer' ? 'selected' : ''}`} aria-current={section === 'developer' ? 'page' : undefined} onClick={() => setSection('developer')}><NavIcon name="developer" />Developer options</button>
       <div className="grid-identity"><span className="account-avatar" aria-hidden="true">{session.name.slice(0, 1).toUpperCase()}</span><div><strong>{session.name}</strong><span className="connection-state">{error ? 'Updates interrupted' : state ? 'Connected' : 'Connecting…'}</span></div><button className="subtle" aria-current={section === 'account' ? 'page' : undefined} onClick={() => setSection('account')}>Account</button></div>
       <small>Sandbox credits · no cash value</small>
     </aside>
     <main className="workspace">
       <header><span>YOUR WORKSPACE</span><span className="badge">{gridCounts(state) ? `${gridCounts(state)!.connected} connected` : state ? 'Grid count unavailable' : 'Connecting…'}</span></header>
-      <div className="intro"><h1>{titles[section]}</h1>{section !== 'developer' && section !== 'account' && <div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div></div>}</div>
+      <div className="intro"><h1>{titles[section]}</h1>{section !== 'developer' && section !== 'account' && section !== 'leaderboard' && <div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div></div>}</div>
       {incomingLink && <section ref={incomingPrompt} tabIndex={-1} className="panel stack" aria-label="Switch account"><h2>Use this link?</h2><p className="grid-address">{incomingLink.server}</p><p>Signs out of this account on this device.</p><small>Keep access with a linked device or login.</small><div className="button-row"><button disabled={leaving} onClick={() => void leaveAccount()}>Sign out and continue</button><button className="secondary" disabled={leaving} onClick={onDismissLink}>Cancel</button></div></section>}
       {linkError && <p className="error" role="alert">{linkError}</p>}
-      {error && <div className="error banner" role="alert">{error}</div>}{leaveError && <div className="error banner" role="alert">{leaveError}</div>}{section === 'account' && <AccountPage api={api} session={session} username={state?.user.username} supported={state ? state.grid !== undefined : undefined} serverTime={state?.server_time} leaving={leaving} onLeave={leaveAccount}  payments={state?.payments} />}
+      {error && <div className="error banner" role="alert">{error}</div>}{leaveError && <div className="error banner" role="alert">{leaveError}</div>}{section === 'account' && <AccountPage api={api} session={session} username={state?.user.username} supported={state ? state.grid !== undefined : undefined} serverTime={state?.server_time} leaving={leaving} onLeave={leaveAccount} payments={state?.payments} />}
+      <Leaderboard api={api} active={section === 'leaderboard' && !expired && !leaving} onCreate={() => setSection('create')} onContribute={() => setSection('contribute')} onUnauthorized={() => { if (!dashboardMounted.current || expiredRef.current || leavingRef.current) return; expiredRef.current = true; setExpired(true); void recoverSession.current(); }} />
       <div hidden={section !== 'create'}><div className="create-layout"><section className="panel compose-panel"><CreateJob api={api} state={state} onCreated={onJobResponse} developerTarget={requestTarget} /></section><GridScene state={state} onOpen={() => setSection('contribute')} /></div></div>
       <div hidden={section !== 'contribute'}>
         <div className={`contribution-layout ${isMacDesktop ? 'with-generation' : ''}`}>
@@ -362,8 +364,8 @@ function JobDiagnostics({ job, devices }: { job: Job; devices: Device[] }) {
     <details><summary>Devices & steps</summary><div className="task-list">{job.tasks.map(task => <div key={task.id} className="task"><div><span>{task.kind === 'image_generate' ? 'Generate' : 'Export'} image {task.variant + 1}</span><small>{task.device_id ? devices.find(device => device.id === task.device_id)?.name || 'Assigned device' : task.status === 'queued' ? 'Awaiting assignment' : 'No active assignment'}{task.attempts > 1 ? ` · attempt ${task.attempts}` : ''}</small></div><span className="muted">{task.status === 'running' ? `${Math.round((task.progress || 0) * 100)}%` : task.status}</span></div>)}</div></details></article>;
 }
 
-function NavIcon({ name }: { name: 'create' | 'contribute' | 'activity' | 'developer' }) {
-  return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{name === 'create' ? <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></> : name === 'contribute' ? <><rect x="3" y="4" width="13" height="10" rx="2" /><path d="M1 18h13" /><rect x="17" y="10" width="5" height="10" rx="1" /></> : name === 'activity' ? <><path d="M3 12h4l3-7 4 14 3-7h4" /></> : <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>}</svg>;
+function NavIcon({ name }: { name: 'create' | 'contribute' | 'activity' | 'leaderboard' | 'developer' }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{name === 'create' ? <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></> : name === 'contribute' ? <><rect x="3" y="4" width="13" height="10" rx="2" /><path d="M1 18h13" /><rect x="17" y="10" width="5" height="10" rx="1" /></> : name === 'activity' ? <><path d="M3 12h4l3-7 4 14 3-7h4" /></> : name === 'leaderboard' ? <><path d="M8 4h8v5a4 4 0 0 1-8 0ZM9 20h6M12 13v7M8 6H4v2a4 4 0 0 0 4 4M16 6h4v2a4 4 0 0 1-4 4" /></> : <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>}</svg>;
 }
 
 function ImageCard({ api, path, title, verified, cloud }: { api: Api; path: string; title: string; verified?: boolean; cloud?: boolean }) {

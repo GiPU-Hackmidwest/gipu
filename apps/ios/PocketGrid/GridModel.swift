@@ -59,6 +59,13 @@ final class GridModel: ObservableObject {
     @Published private(set) var contributionTransition = false
     @Published private var acknowledgedJobs = AcknowledgedJobs()
 
+    @Published private(set) var leaderboard: WeeklyBoard?
+    @Published private(set) var boardLoading = false
+    @Published private(set) var boardSaving = false
+    @Published private(set) var boardError: String?
+    @Published private(set) var boardUnavailable = false
+    @Published private(set) var boardMetric: BoardMetric = .overall
+    private var boardGate = BoardRequestGate()
     private var authGeneration = 0
     private var pendingSubmission: (signature: Data, id: String)?
     private var token = ""
@@ -134,6 +141,7 @@ final class GridModel: ObservableObject {
             return
         }
         authGeneration += 1
+        resetLeaderboard()
         let ticket = authGeneration
         let oldAPI = api, oldToken = token, hadSession = connected
         busy = true; error = nil
@@ -309,7 +317,8 @@ final class GridModel: ObservableObject {
         pollTask?.cancel(); heartbeatTask?.cancel()
         pollTask = Task {
             while !Task.isCancelled && foreground {
-                await refresh()
+                // Automatic polling must not trap an offline account in repeated alerts.
+                await refresh(reportError: false)
                 do { try await Task.sleep(for: .seconds(2)) } catch { break }
             }
         }
@@ -329,7 +338,9 @@ final class GridModel: ObservableObject {
                 } catch {
                     if !Task.isCancelled && generation == contributionGate.generation {
                         // Fail closed when coordination is lost; never keep processing unseen.
-                        stopLocalWork(); stage = "Paused: connection lost"; self.error = error.localizedDescription
+                        let wasSharing = sharing
+                        stopLocalWork(); stage = "Paused: connection lost"
+                        if wasSharing { self.error = error.localizedDescription }
                     }
                 }
                 do { try await Task.sleep(for: .seconds(3)) } catch { break }
@@ -444,6 +455,59 @@ final class GridModel: ObservableObject {
         }
     }
 
+    private func resetLeaderboard() {
+        boardGate.invalidate()
+        leaderboard = nil; boardLoading = false; boardSaving = false
+        boardError = nil; boardUnavailable = false; boardMetric = .overall
+    }
+
+    func loadLeaderboard(_ metric: BoardMetric? = nil) async {
+        guard connected, !boardSaving else { return }
+        if let metric { boardMetric = metric }
+        let selected = boardMetric
+        let request = boardGate.begin()
+        let auth = authGeneration, sessionToken = token, origin = server
+        let boardAPI = api
+        boardLoading = true; boardError = nil; boardUnavailable = false
+        // A board from another metric is not presented as the newly selected one.
+        if leaderboard?.metric != selected { leaderboard = nil }
+        defer { if boardGate.accepts(request), auth == authGeneration { boardLoading = false } }
+        do {
+            let reply = try await boardAPI.json(WeeklyBoard.self, "/api/leaderboard?metric=\(selected.rawValue)", token: sessionToken)
+            guard !Task.isCancelled, connected, auth == authGeneration, token == sessionToken,
+                  origin == server, boardGate.accepts(request), reply.metric == selected else { return }
+            leaderboard = reply
+        } catch {
+            guard !Task.isCancelled, connected, auth == authGeneration, token == sessionToken,
+                  origin == server, boardGate.accepts(request) else { return }
+            if let api = error as? APIError, case let .server(status, _) = api, [404, 405].contains(status) {
+                boardUnavailable = true; leaderboard = nil
+            } else { boardError = "Could not refresh the board. Try again." }
+        }
+    }
+
+    func saveBoardProfile(enabled: Bool, nickname: String) async {
+        guard connected, !boardSaving else { return }
+        let request = boardGate.begin()
+        let auth = authGeneration, sessionToken = token, origin = server
+        let boardAPI = api
+        boardSaving = true; boardLoading = false; boardError = nil
+        defer { if auth == authGeneration { boardSaving = false } }
+        do {
+            let reply = try await boardAPI.json(WeeklyBoard.self, "/api/leaderboard/profile", token: sessionToken, method: "PATCH",
+                                               body: ["enabled": enabled, "nickname": nickname.trimmingCharacters(in: .whitespacesAndNewlines)])
+            guard !Task.isCancelled, connected, auth == authGeneration, token == sessionToken,
+                  origin == server, boardGate.accepts(request) else { return }
+            leaderboard = reply; boardMetric = reply.metric; boardUnavailable = false
+        } catch {
+            guard !Task.isCancelled, connected, auth == authGeneration, token == sessionToken,
+                  origin == server, boardGate.accepts(request) else { return }
+            if let api = error as? APIError, case let .server(status, _) = api, status == 422 {
+                boardError = "Use 1–24 letters, numbers, spaces, . _ or - for your nickname."
+            } else { boardError = "Could not save board participation. Try again." }
+        }
+    }
+
     func image(_ path: String) async throws -> Data { try await api.data(path, token: token) }
 
     func enableNotifications() async {
@@ -463,6 +527,7 @@ final class GridModel: ObservableObject {
 
     func disconnect() async {
         authGeneration += 1
+        resetLeaderboard()
         busy = true
         defer { busy = false }
         await pause()
