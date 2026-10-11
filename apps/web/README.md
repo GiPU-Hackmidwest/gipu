@@ -1,10 +1,10 @@
-# PocketGrid web and Mac client
+# GiPU web, Mac and Android client
 
-This client is intentionally small: join a grid, submit image jobs, share a foreground browser export worker, control owned devices, inspect accounting, and opt into notifications. Actual image inference runs in the separate Python worker. Browsers and phones execute a fixed image export transform; they do not run diffusion.
+This client is intentionally small: join a grid, submit image jobs, share a foreground browser export worker, control owned devices, inspect accounting, and opt into notifications. A separate Python worker handles generation tasks: it runs Tiny-SD locally or requests cloud pixels through the coordinator. Browsers and phones perform lossless PNG export; they do not run diffusion.
 
-## Native design phase
+## Client structure
 
-Arboy with Codex owns the Mac and SwiftUI UX; the teammate with Claude owns the Tauri Android port. The shared client has **Create**, **Contribute** and **Activity** destinations. Keep visible text short and expose technical setup through disclosure. See [design and Android integration notes](../../docs/native-ui-design.md).
+Arboy with Codex owns the Mac and SwiftUI UX; the teammate with Claude owns the Tauri Android port. The shared client has **Create**, **Contribute**, **Leaderboard** and **Activity** destinations, plus account controls. Keep visible text short and expose technical setup through disclosure. See [design and Android integration notes](../../docs/native-ui-design.md).
 
 Mac worker controls are gated by `isMacDesktop`. `platformFlags` in `src/platform.ts` recognizes `TAURI_ENV_PLATFORM` target names including `darwin` and `androideabi` (plus friendly aliases), falling back to the user agent only when that metadata is absent. Keep Vite’s `TAURI_ENV_` environment prefix: a Tauri runtime alone is insufficient because Android also uses Tauri. Keep `DesktopWorkerPanel` mounted when navigation changes: its cleanup deliberately stops the managed Python process. The shared UI and HTTP API must remain platform-neutral; Android native adapters and lifecycle work belong to the Android owner.
 
@@ -35,13 +35,17 @@ The release `.app` is placed under `src-tauri/target/release/bundle/macos`. This
 
 ### Bundled worker build
 
-`npm run build:desktop` (`scripts/build-desktop-app.sh`, needs `uv`) freezes the Python worker with PyInstaller into `src-tauri/resources/worker/`, builds the app with `tauri.bundled-worker.conf.json`, which ships that folder as an app resource, then restores the symlinks Tauri expands so PyTorch is not stored twice. The integrated debug app measured 670 MB; rebuild size depends on platform and dependencies. Model weights are not bundled: in **Contribute**, **Download model · 1 GB** fetches the pinned Tiny-SD revision (about 1 GB) from Hugging Face into PocketGrid's app data, shows progress and can be cancelled. A successful download writes a ready marker only after the worker loads the model once. **Connect worker** then runs the bundled worker with `--local-only` and that cache, registering it paused. Model loading is offline; grid access still needs a coordinator connection. Choose **Start sharing** separately. The clay interface keeps progress and Cancel visible during download, with processor and setup details behind disclosure. The frozen worker is built for the machine's own platform and architecture, and is not yet code-signed or notarized.
+`npm run build:desktop` (`scripts/build-desktop-app.sh`, needs `uv`) freezes the Python worker with PyInstaller into `src-tauri/resources/worker/`, builds with `tauri.bundled-worker.conf.json`, then restores the symlinks Tauri expands so PyTorch is not stored twice. Model weights are not bundled. The worker is frozen for the build machine's platform and architecture; unsigned builds are not notarized.
+
+In **Contribute**, turning **Create images** on connects and starts the worker. For local generation, the app first asks before downloading the pinned Tiny-SD model (about 1 GB) into its app data. Progress and Cancel remain visible; a ready marker is written only after the worker loads the model successfully. Turn the switch on after preparation to start. Cloud-mode grids skip model download and request pixels through the coordinator; the app never receives the provider key.
+
+The native worker registers paused before the toggle enables it. Manual connection from **Developer options** stays paused. Local model loading is cache-only, but grid access still needs a coordinator connection.
 
 ### Checkout worker (development)
 
-Builds without the bundled worker (`npm run tauri dev`, `npm run tauri build`) keep the prepared-checkout flow below. Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect worker** in **Contribute**. The app finds its build checkout by default; **Worker setup & details** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
+Builds without the bundled worker (`npm run tauri dev`, `npm run tauri build`) use a prepared checkout. Install the Python environment through [the worker guide](../../workers/python/README.md); local mode also needs cached Tiny-SD weights, while cloud mode does not. Join the grid and enable **Developer options** to set **GiPU project folder** under **Mac image worker** and choose runtime settings. The build checkout is selected by default.
 
-Connect explicitly starts one local Python process, loads the cached model and registers it **paused** under the current account. It never installs packages or downloads models. Once connected, set CPU threads, image size and session duration in **Sharing limits**, then press **Start sharing**. Connecting consumes model memory even while paused. CPU thread limits are not GPU percentage or RAM quotas.
+Turn **Create images** on in **Contribute** to connect and explicitly start. **Finish images** separately enables the foreground canvas exporter. CPU threads, image size, session duration and manual worker connection details live in Developer options. A local worker consumes model memory while connected, even when paused. CPU thread limits are not GPU percentage or RAM quotas.
 
 **Pause** stops accepting work and cancels active inference at a denoising boundary, while keeping the model loaded. **Disconnect**, **Leave**, reloading the interface or closing/quitting the app stops the managed process. Disconnect also asks the coordinator to pause the device; if the network is unavailable, its unfinished lease expires. Reconnecting always pauses the device again before it can claim work. A sharing session may continue while the Mac app is in the background, within the chosen limits; the canvas exporter still pauses when hidden.
 
@@ -49,14 +53,15 @@ In both modes the app passes the account token through the child's environment, 
 
 ## Behavior and security
 
-- Contribution is off after joining and after page reload, and starts only when the owner presses Start.
-- Each browser has a distinct device token. Owner sessions and device tokens are separate. Tokens are stored locally for this prototype, sent only in Authorization headers, never image URLs.
+- Contribution is off after joining and after page reload, and starts only when the owner turns a contribution toggle on.
+- Each browser has a distinct device token. Owner sessions and device tokens are separate. The Mac account session uses Keychain; Android uses its secure-storage adapter and browsers use local storage. Tokens are sent only in Authorization headers, never image URLs.
 - Closing, hiding, or leaving this window stops its canvas worker and requests server-side lease revocation. Sessions also expire server-side.
 - The canvas worker can only read a supplied image and submit it again as a pixel-identical PNG (no border; the coordinator checks every pixel). No arbitrary code from jobs executes.
 - Browser notifications may require HTTPS and platform support. The activity list works without notification permission. The Mac app uses native notifications after explicit opt-in.
 - Earnings notifications require the event's recipient to match the signed-in user. Payments to other contributors still appear in job activity and receipts, without a personal earnings alert.
 - Submitting again after an ambiguous network failure reuses the request ID for an unchanged form. A successful submission clears the ID so a later intentional request is a new job.
-- The model generates a whole image on one laptop. Multiple variants may run on different laptops; exports can run on other devices. Retried generation starts again, not from a transferred checkpoint.
+- Local mode generates a whole image on one laptop; cloud mode gets it through the coordinator. Multiple variants can use different laptop workers, and exports can run on other devices. Retried generation starts again, not from a transferred checkpoint.
+- Account data is scoped to its owner. Assigned workers can read their task prompt/pixels. The public weekly leaderboard is opt-in and uses a separate nickname; grants and credit purchases do not count as credits used.
 
 ## Checks
 
@@ -69,7 +74,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 From the repository root, `node --experimental-strip-types --test apps/web/tests/desktopWorker.test.mjs` checks native-command ordering across disconnects and account changes. `workers/python/.venv/bin/python -m pytest tests/test_worker.py -q` checks paused registration and owner/server identity validation. Native process tests use an isolated fixture rather than image inference; one ignored test is that subprocess fixture.
 
-## Merge integration checks
+## Historical merge integration checks
 
 - The shared frontend passed 33 Node tests, including platform detection for `darwin` and `androideabi`. Rust passed 15 tests with one ignored subprocess fixture; Python worker checks passed 33 tests and packaging checks passed 7.
 - The bundled Mac debug app built successfully with a custom Cargo target directory and measured 670 MB. In its actual interface, Download, Cancel and Retry worked, and the real model download completed. Connect began paused; explicit Start enabled sharing, and navigating to Create preserved the managed worker.

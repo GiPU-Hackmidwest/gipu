@@ -27,7 +27,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; desktop bundle icon wired and native Mac package verified |
 | C10 | Rename to GiPU | done: GiPU Tauri product/window and Android names merged #27; bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
 | C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | review: iOS runtime now uses invisible encoder after confirmed deployment; pixel/strict-settlement checks and simulator build pass; physical phone pending |
-| C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
+| C12 | Replicable README | done: fresh-clone README #21 | done: refreshed product README with supplied wordmark, current cloud/local pricing and app journey; reviewed Mac/iOS setup |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
 | C15 | Contribute layout on large screens | — | done: Mac and 320 px browser layout checked |
@@ -36,6 +36,13 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · README refresh (PR #44, `docs/gipu-readme`)
+
+- **Coordination:** Arboy explicitly asked Codex to update the README, take structural inspiration from Pitchly, include the actual GiPU wordmark and push. This authorizes the focused README changes normally owned by Claude. Requesting coordination here before editing the root and web/worker guides; no worker, server, protocol or release-workflow behavior will change.
+- **Scope:** product overview and app journey first; existing light/dark wordmark; accurate cloud/local generation, dynamic prices, platform availability and source setup. Preserve runnable platform instructions and distinguish published installers from draft builds.
+- **Verification:** read-only review against current worker, planner, pricing and UI code passed. Relative Markdown links, heading anchors, image sources and fenced blocks passed automated checks; `git diff --check` passed. GitHub's GFM renderer retained the themed picture and SVG references. The rendered introduction and both existing light/dark wordmarks were visually inspected in a local browser. No app behavior changed, so builds, inference and physical-device checks were not rerun.
+- **Handoff / Open questions:** no contract change, dependency or deployment needed. Existing source commands retained; published installers remain separate from the v0.4.0 draft and no release workflow was triggered.
 
 ### 2026-10-11 · Codex · manual v0.4.0 build (`docs/release-0.4-handoff`)
 
