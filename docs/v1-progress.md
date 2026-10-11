@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: v0.4.0 Mac package signature defect reproduced; repair validated locally; corrected installer/publication pending; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: Mac signature fix merged #45; v0.4.1 draft checksum/signature/worker verified; second-Mac installation/publication pending; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: Arboy's later direction supersedes the original pair; logo orange with dark ink measures 5.34:1; native Mac inspected |
@@ -36,6 +36,14 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · corrected Mac draft and app launch (PR #46, `docs/mac-release-0.4.1`)
+
+- **Build:** packaging fix merged in [PR #45](https://github.com/pocketgrid-hackmidwest/pocketgrid/pull/45), main `d317a38`. Dispatched the existing manual-only Release workflow for version `0.4.1`, Mac only, draft enabled. [Run 38140864359](https://github.com/pocketgrid-hackmidwest/pocketgrid/actions/runs/38140864359) succeeded; the Android job was skipped. No workflow triggers or signing secrets changed.
+- **Artifact verification:** downloaded `GiPU-0.4.1-macos-arm64.dmg` (284,784,771 bytes); SHA-256 `e8111d3104fca8f65f8b827f72a4508a76fe68dbd8b61042b811fe0116a1558d` matches both the uploaded digest and `SHA256SUMS.txt`. `hdiutil verify` passed. The mounted app reports version 0.4.1 with 5,100 sealed resource entries, and `codesign --verify --deep --strict` passed on both the mounted app and its copied installation. Its bundled worker ran `--help`; runner app size was 660M.
+- **Launch scope:** the v0.4.1 executable starts, but native automation could not inspect its rendered window. The separately repaired v0.4.0 copy rendered connected earlier. For Arboy's immediate testing, raised the existing native debug app on Create and opened the hosted browser app connected to its existing account. No image request or contribution opt-in was performed. The grid had zero devices ready for generation or finishing at the check.
+- **Documentation:** marked the defective v0.4.0 Mac draft unsuitable for installation and added accurate verification/install notes to the corrected v0.4.1 draft. This is an Apple-silicon installer only; the teammate's Mac processor is still unconfirmed. No new Android, iPhone or Windows installation evidence is claimed.
+- **Handoff / Open questions:** v0.4.1 remains a draft, pending second-Mac installation and publication. Developer ID signing/notarization is unavailable. CLI download did not exercise browser quarantine; strict integrity verification does not establish Gatekeeper acceptance. Personal Xcode signing remains uncommitted. Documentation-only follow-up verified with `git diff --check`.
 
 ### 2026-10-11 · Codex · Mac release install correction (`fix/mac-release-signature`)
 
