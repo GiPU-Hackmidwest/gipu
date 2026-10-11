@@ -4,6 +4,12 @@ export type WorkerStatus = {
   backend?: string | null;
   message: string;
 };
+export type ModelStatus = {
+  phase: 'missing' | 'downloading' | 'ready' | 'failed';
+  downloadedBytes: number;
+  expectedBytes: number;
+  message: string;
+};
 export type WorkerConnection = { projectRoot: string; server: string; sessionToken: string; backend: string };
 type Invoker = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -29,7 +35,11 @@ export class DesktopWorkerClient {
     return this.serialize(() => this.invoke<T>(command, args));
   }
 
-  defaults() { return this.enqueue<{ projectRoot: string }>('worker_defaults'); }
+  defaults() { return this.enqueue<{ projectRoot: string; bundled: boolean }>('worker_defaults'); }
+  // The model download is independent of which account is connected, so it is not queued behind connects.
+  modelStatus() { return this.invoke<ModelStatus>('model_status'); }
+  downloadModel() { return this.invoke<ModelStatus>('download_model'); }
+  cancelModelDownload() { return this.invoke<ModelStatus>('cancel_model_download'); }
   status() { return this.enqueue<WorkerStatus>('worker_status'); }
   connect(options: WorkerConnection) { return this.enqueue<WorkerStatus>('connect_worker', options); }
   disconnect(afterStop?: (status: WorkerStatus) => Promise<void>) {

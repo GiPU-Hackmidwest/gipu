@@ -23,7 +23,7 @@ Joining comes first: grid address, name and join code → **Join grid**. Show th
 | Destination | Primary journey | Details on demand |
 | --- | --- | --- |
 | Create | Prompt → image count/budget → Create → Planning / Waiting / Generating / Finishing → image, Save/Share and charge/refund | Model options, planner details, per-stage device and full receipt |
-| Contribute | Mac: Connect installed worker → Connected · paused → limits → Start sharing → Pause or Disconnect. iPhone: limits → Start → Pause; stay foregrounded. | Installed worker settings, resource measurements, manual pairing and technical role |
+| Contribute | Mac: Download model once → Connect worker → Connected · paused → limits → Start sharing → Pause or Disconnect. iPhone: limits → Start → Pause; stay foregrounded. | Installed worker settings, resource measurements, manual pairing and technical role |
 | Activity | Recent work, earned credits and notifications | Ledger entries and accounting detail |
 
 The device landscape is functional: counts derive from live grid state, while device controls identify each actual device and its connected/sharing state. A remaining-time arc must show unknown or paused state honestly and must not invent progress. Failed and cancelled requests remain visible. Cancellation preserves accepted work and returns unused credits. A refresh error must not erase an acknowledged request or revive a cancelled one. Device labels distinguish offline, connected/paused, loading and sharing; neither joining nor connecting implies contribution.
@@ -68,15 +68,30 @@ White on orange is 3.13:1, so normal-size action labels use dark ink. These toke
 
 Web controls have at least 44px height, visible keyboard focus, reduced-motion handling and a stronger-border option for increased contrast. iOS uses native controls and Dynamic Type. Status always includes words rather than relying on color. Confirm keyboard order, VoiceOver labels, large text, light/dark modes and narrow layouts during rendered QA.
 
+## Bundled worker integration
+
+The Mac Contribute journey includes one-time **Download model · 1 GB** with progress and Cancel. Once ready, **Connect worker** loads the cache offline and registers paused; **Start sharing** remains a separate action. Grid communication still requires the coordinator. Ordinary users do not need Python paths or pairing tokens. Processor and worker details stay behind disclosure, preserving the minimal clay interface.
+
+`npm run build:desktop` packages the frozen Python worker; model weights download into app data. Source builds retain the prepared-checkout development fallback. Connecting does not install packages or fetch models, and switching destinations must not disconnect the managed worker.
+
 ## Android integration
 
-The React journeys and API state are shared. `isMacDesktop` gates `DesktopWorkerPanel` and Mac-only behavior; generic Tauri detection must not activate Mac commands on Android. Keep the panel mounted across navigation because cleanup disconnects the managed worker. Showing/hiding destinations must not change native worker ownership or silently resume sharing.
+The React journeys and API state are shared. `platformFlags` in `apps/web/src/platform.ts` recognizes `TAURI_ENV_PLATFORM` target names including `darwin` and `androideabi` (plus friendly aliases), and only falls back to the user agent when metadata is absent. Preserve Vite’s `TAURI_ENV_` prefix. `isMacDesktop` gates `DesktopWorkerPanel` and Mac-only behavior; generic Tauri detection must not activate Mac commands on Android. Keep the panel mounted across navigation because cleanup disconnects the managed worker. Showing/hiding destinations must not change native worker ownership or silently resume sharing.
 
-Tauri window configuration uses `create: false`; setup explicitly builds each configured window with `WebviewWindowBuilder::from_config`, preserving configured properties while adding the macOS download handler. Do not add a second automatically created window. The macOS handler accepts only authenticated image blobs already fetched by the frontend and reports download completion; it does not download arbitrary remote URLs or carry credentials. Android owns its download integration.
+Tauri window configuration uses `create: false`; shared setup in `apps/web/src-tauri/src/lib.rs` explicitly builds each configured window on all targets with `WebviewWindowBuilder::from_config`, preserving configured properties while adding the macOS download handler. Do not add a second automatically created window. The macOS handler accepts only authenticated image blobs already fetched by the frontend and reports download completion; it does not download arbitrary remote URLs or carry credentials. Android owns its download integration.
 
-The Android workstream owns native credentials, notifications, save/share, lifecycle and permissions. Isolate those behind Android adapters. Do not infer that mobile background generation is supported, or port macOS Python-launch and filesystem assumptions into common components. Keep SwiftUI independent while sharing product language and state semantics.
+The Android workstream owns native credentials, notifications, save/share, lifecycle and permissions. Isolate those behind Android adapters. Do not infer that mobile background generation is supported, or port macOS Python-launch and filesystem assumptions into common components. The iOS app remains native SwiftUI, independent of Tauri mobile scaffolding, while sharing product language and state semantics.
 
 ## Verification scope
+
+### Merge integration
+
+- Frontend: 33 Node tests passed, including `darwin`/`androideabi` platform detection. Rust: 15 passed, one ignored subprocess fixture. Python worker: 33 passed. Packaging: 7 passed.
+- The bundled Mac debug app built successfully with a custom Cargo target directory and measured 670 MB. Its actual UI passed Download, Cancel and Retry checks and completed the real model download. Connect began paused; explicit Start enabled sharing. Navigating to Create preserved the managed worker.
+- Real request `551049f0` completed through **This Mac image worker** generation and **Mac Demo desktop window** finishing. The receipt balanced 10 reserved = 7 contributor credits + 1 fee + 2 refunded. Native Save showed **Saved to Downloads**. Both workers paused, then Disconnect showed **Disconnected**.
+- The Android frontend production build passed and native source was reviewed. Native Android compilation was unavailable because SDK/NDK tools are absent. SDK license consent was not provided, and no license was accepted.
+
+This integrated end-to-end run used one physical Mac for generation and desktop-window finishing. It adds no physical-phone or multi-laptop failover evidence. Results below retain their earlier build scope.
 
 ### Clay refinement
 

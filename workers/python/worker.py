@@ -412,4 +412,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # In the frozen desktop worker, PyTorch's helper processes re-run this executable.
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

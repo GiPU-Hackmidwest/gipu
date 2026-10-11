@@ -1,4 +1,6 @@
-//! Launch only an existing local worker environment, after an explicit Connect.
+//! Launch the local image worker only after an explicit Connect: the frozen worker
+//! bundled with a packaged app, or an existing checkout's environment in development.
+//! Model weights are fetched only by an explicit download, never by Connect.
 //! Worker output is never returned verbatim: it may contain credentials or URLs.
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +19,10 @@ use url::Url;
 
 const MAX_OUTPUT_LINE: usize = 4096;
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
+const MODEL_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(45 * 60);
+// The pinned Tiny-SD snapshot is about 1 GB; this only scales the progress display.
+const MODEL_EXPECTED_BYTES: u64 = 1_050_000_000;
+const MODEL_READY_MARKER: &str = "tiny-sd.ready";
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -53,6 +59,36 @@ impl Default for WorkerStatus {
 #[serde(rename_all = "camelCase")]
 pub struct WorkerDefaults {
     project_root: String,
+    bundled: bool,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelPhase {
+    Missing,
+    Downloading,
+    Ready,
+    Failed,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    phase: ModelPhase,
+    downloaded_bytes: u64,
+    expected_bytes: u64,
+    message: String,
+}
+
+impl ModelStatus {
+    fn new(phase: ModelPhase, message: &str) -> Self {
+        Self {
+            phase,
+            downloaded_bytes: 0,
+            expected_bytes: MODEL_EXPECTED_BYTES,
+            message: message.into(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -69,15 +105,16 @@ impl WorkerManager {
 }
 
 #[tauri::command]
-pub fn worker_defaults() -> WorkerDefaults {
-    // Development builds know the repository location. Packaged apps still let
-    // the owner choose an already prepared checkout if this location is absent.
+pub fn worker_defaults(app: AppHandle) -> WorkerDefaults {
+    // Development builds know the repository location. Packaged apps without a
+    // bundled worker still let the owner choose an already prepared checkout.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3);
     WorkerDefaults {
         project_root: root
             .and_then(|path| canonical_project(path).ok())
             .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default(),
+        bundled: bundled_worker(&app).is_some(),
     }
 }
 
@@ -85,6 +122,7 @@ pub fn worker_defaults() -> WorkerDefaults {
 pub fn connect_worker(
     app: AppHandle,
     state: State<'_, WorkerManager>,
+    models: State<'_, ModelManager>,
     project_root: String,
     server: String,
     session_token: String,
@@ -96,7 +134,16 @@ pub fn connect_worker(
         return runtime.status.clone();
     }
     let plan = (|| {
-        let root = canonical_project(Path::new(&project_root))?;
+        let program = match bundled_worker(&app) {
+            Some(executable) => {
+                let paths = model_paths(&app)?;
+                if models.lock().refresh(&paths).phase != ModelPhase::Ready {
+                    return Err("Download the image model before connecting this worker.");
+                }
+                WorkerProgram::Bundled { executable, hf_home: paths.hf_home }
+            }
+            None => WorkerProgram::Checkout(canonical_project(Path::new(&project_root))?),
+        };
         let server = validate_server(&server)?;
         validate_backend(&backend)?;
         validate_session_token(&session_token)?;
@@ -108,7 +155,7 @@ pub fn connect_worker(
         create_identity_dir(&identity_dir)?;
         Ok::<_, &'static str>(LaunchPlan {
             identity: identity_path(&identity_dir, &server, &session_token),
-            root,
+            program,
             server,
             session_token,
             backend,
@@ -130,6 +177,184 @@ pub fn worker_status(state: State<'_, WorkerManager>) -> WorkerStatus {
 #[tauri::command]
 pub fn disconnect_worker(state: State<'_, WorkerManager>) -> WorkerStatus {
     state.disconnect()
+}
+
+#[tauri::command]
+pub fn model_status(app: AppHandle, state: State<'_, ModelManager>) -> ModelStatus {
+    match model_paths(&app) {
+        Ok(paths) => state.lock().refresh(&paths),
+        Err(message) => ModelStatus::new(ModelPhase::Failed, message),
+    }
+}
+
+#[tauri::command]
+pub fn download_model(app: AppHandle, state: State<'_, ModelManager>) -> ModelStatus {
+    let Some(executable) = bundled_worker(&app) else {
+        return ModelStatus::new(ModelPhase::Failed, "This build has no bundled worker. Prepare the model in your PocketGrid checkout instead.");
+    };
+    match model_paths(&app) {
+        Ok(paths) => state.lock().start(prepare_command(&executable, &paths), &paths),
+        Err(message) => ModelStatus::new(ModelPhase::Failed, message),
+    }
+}
+
+#[tauri::command]
+pub fn cancel_model_download(app: AppHandle, state: State<'_, ModelManager>) -> ModelStatus {
+    state.cancel();
+    model_status(app, state)
+}
+
+fn bundled_worker(app: &AppHandle) -> Option<PathBuf> {
+    let name = if cfg!(windows) { "pocketgrid-worker.exe" } else { "pocketgrid-worker" };
+    let path = app.path().resource_dir().ok()?.join("worker").join(name);
+    path.is_file().then_some(path)
+}
+
+struct ModelPaths {
+    hf_home: PathBuf,
+    ready_marker: PathBuf,
+}
+
+fn model_paths(app: &AppHandle) -> Result<ModelPaths, &'static str> {
+    let models = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "Cannot locate desktop app storage. Restart PocketGrid and try again.")?
+        .join("models");
+    Ok(ModelPaths {
+        hf_home: models.join("huggingface"),
+        ready_marker: models.join(MODEL_READY_MARKER),
+    })
+}
+
+fn prepare_command(executable: &Path, paths: &ModelPaths) -> Command {
+    // `prepare` fetches the worker's pinned model revision, then loads it once to
+    // prove the files are usable. It never registers a device or contacts the grid.
+    let mut command = Command::new(executable);
+    command
+        .current_dir(paths.hf_home.parent().unwrap_or(&paths.hf_home))
+        .args(["prepare", "--backend", "cpu", "--cpu-threads", "2"])
+        .env("HF_HOME", &paths.hf_home)
+        .env("HF_HUB_DISABLE_TELEMETRY", "1");
+    command
+}
+
+/// Bytes stored under the model cache, without following snapshot symlinks twice.
+fn stored_bytes(path: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| match entry.file_type() {
+            Ok(kind) if kind.is_dir() => stored_bytes(&entry.path()),
+            Ok(kind) if kind.is_file() => entry.metadata().map(|meta| meta.len()).unwrap_or(0),
+            _ => 0,
+        })
+        .sum()
+}
+
+#[derive(Default)]
+pub struct ModelManager(Mutex<ModelRuntime>);
+
+impl ModelManager {
+    fn lock(&self) -> MutexGuard<'_, ModelRuntime> {
+        self.0.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
+    pub fn cancel(&self) {
+        let mut runtime = self.lock();
+        if let Some(mut child) = runtime.child.take() {
+            child.terminate();
+            runtime.failure = Some("Model download cancelled. Download again when you are ready.");
+        }
+    }
+}
+
+#[derive(Default)]
+struct ModelRuntime {
+    child: Option<ManagedChild>,
+    failure: Option<&'static str>,
+}
+
+impl ModelRuntime {
+    fn start(&mut self, mut command: Command, paths: &ModelPaths) -> ModelStatus {
+        let current = self.refresh(paths);
+        if matches!(current.phase, ModelPhase::Downloading | ModelPhase::Ready) {
+            return current;
+        }
+        if std::fs::create_dir_all(&paths.hf_home).is_err() {
+            return ModelStatus::new(ModelPhase::Failed, "Cannot create model storage in PocketGrid app data.");
+        }
+        let _ = std::fs::remove_file(&paths.ready_marker);
+        self.failure = None;
+        let child = command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn();
+        match child {
+            Ok(mut process) => {
+                // Drain stderr so download progress output cannot block the child.
+                let (sender, events) = mpsc::sync_channel(32);
+                if let Some(stderr) = process.stderr.take() {
+                    thread::spawn(move || read_output(stderr, false, sender));
+                }
+                self.child = Some(ManagedChild { process, events, started_at: Instant::now() });
+                self.refresh(paths)
+            }
+            Err(_) => {
+                self.failure = Some("Could not start the bundled worker to download the model. Reinstall PocketGrid and try again.");
+                self.refresh(paths)
+            }
+        }
+    }
+
+    fn refresh(&mut self, paths: &ModelPaths) -> ModelStatus {
+        if let Some(child) = self.child.as_mut() {
+            // Diagnostics are drained but not shown: download errors are reported generically.
+            child.events.try_iter().for_each(drop);
+            match child.process.try_wait() {
+                Ok(Some(exit)) => {
+                    self.child = None;
+                    if exit.success() && std::fs::write(&paths.ready_marker, b"").is_ok() {
+                        self.failure = None;
+                    } else {
+                        self.failure = Some("Model download failed. Check your internet connection and that about 1 GB of disk space is free, then retry.");
+                    }
+                }
+                Ok(None) if child.started_at.elapsed() > MODEL_DOWNLOAD_TIMEOUT => {
+                    self.child = None;
+                    self.failure = Some("Model download timed out after 45 minutes and was stopped. Retry on a faster connection.");
+                }
+                Ok(None) => {
+                    let downloaded = stored_bytes(&paths.hf_home);
+                    return ModelStatus {
+                        downloaded_bytes: downloaded,
+                        ..ModelStatus::new(ModelPhase::Downloading, if downloaded >= MODEL_EXPECTED_BYTES * 9 / 10 {
+                            "Checking the downloaded model. This can take a minute."
+                        } else {
+                            "Downloading the image model. You can keep using PocketGrid meanwhile."
+                        })
+                    };
+                }
+                Err(_) => {
+                    self.child = None;
+                    self.failure = Some("Could not inspect the model download. It has been stopped; retry.");
+                }
+            }
+        }
+        if let Some(message) = self.failure {
+            ModelStatus::new(ModelPhase::Failed, message)
+        } else if paths.ready_marker.is_file() {
+            ModelStatus {
+                downloaded_bytes: stored_bytes(&paths.hf_home),
+                ..ModelStatus::new(ModelPhase::Ready, "Image model downloaded. Connect the worker when you want to share.")
+            }
+        } else {
+            ModelStatus::new(ModelPhase::Missing, "The image model (about 1 GB) is not downloaded yet.")
+        }
+    }
 }
 
 fn canonical_project(path: &Path) -> Result<PathBuf, &'static str> {
@@ -230,8 +455,13 @@ fn identity_path(directory: &Path, server: &str, session_token: &str) -> PathBuf
     directory.join(format!("{:x}.json", hasher.finalize()))
 }
 
+enum WorkerProgram {
+    Checkout(PathBuf),
+    Bundled { executable: PathBuf, hf_home: PathBuf },
+}
+
 struct LaunchPlan {
-    root: PathBuf,
+    program: WorkerProgram,
     identity: PathBuf,
     server: String,
     session_token: String,
@@ -240,11 +470,26 @@ struct LaunchPlan {
 
 impl LaunchPlan {
     fn command(&self) -> Command {
-        let mut command = Command::new(self.root.join("workers/python/.venv/bin/python"));
+        let mut command = match &self.program {
+            WorkerProgram::Checkout(root) => {
+                let mut command = Command::new(root.join("workers/python/.venv/bin/python"));
+                command
+                    .current_dir(root)
+                    .arg("-u")
+                    .arg(root.join("workers/python/worker.py"));
+                command
+            }
+            WorkerProgram::Bundled { executable, hf_home } => {
+                // The frozen worker sits in the read-only app bundle; keep its cache in app data.
+                let mut command = Command::new(executable);
+                command
+                    .current_dir(hf_home.parent().unwrap_or(hf_home))
+                    .env("HF_HOME", hf_home)
+                    .env("HF_HUB_DISABLE_TELEMETRY", "1");
+                command
+            }
+        };
         command
-            .current_dir(&self.root)
-            .arg("-u")
-            .arg(self.root.join("workers/python/worker.py"))
             .args(["run", "--server", &self.server, "--identity"])
             .arg(&self.identity)
             .args([
@@ -314,7 +559,7 @@ fn diagnostic_hint(line: &str) -> Option<&'static str> {
         || lower.contains("offline mode")
         || lower.contains("not in the cached")
     {
-        Some("The image model is not fully cached locally. Prepare the worker model using README, then reconnect. Connect never downloads models.")
+        Some("The image model is not fully downloaded. Download it in PocketGrid (or prepare your checkout's model using README), then reconnect. Connect never downloads models.")
     } else if lower.contains("401")
         || lower.contains("403")
         || lower.contains("unauthorized")
@@ -602,7 +847,7 @@ mod tests {
     #[test]
     fn launch_uses_fixed_arguments_and_environment_only_for_token() {
         let plan = LaunchPlan {
-            root: PathBuf::from("/tmp/PocketGrid project"),
+            program: WorkerProgram::Checkout(PathBuf::from("/tmp/PocketGrid project")),
             identity: PathBuf::from("/private/app-data/desktop-workers/hash.json"),
             server: "http://127.0.0.1:8787".into(),
             session_token: TOKEN.into(),
@@ -613,7 +858,7 @@ mod tests {
             command.get_program(),
             "/tmp/PocketGrid project/workers/python/.venv/bin/python"
         );
-        assert_eq!(command.get_current_dir(), Some(plan.root.as_path()));
+        assert_eq!(command.get_current_dir(), Some(Path::new("/tmp/PocketGrid project")));
         let arguments: Vec<_> = command
             .get_args()
             .map(|value| value.to_string_lossy().into_owned())
@@ -646,6 +891,115 @@ mod tests {
             .unwrap()
             .1;
         assert_eq!(token, Some(std::ffi::OsStr::new(TOKEN)));
+    }
+
+    #[test]
+    fn bundled_launch_keeps_cache_in_app_data_and_stays_offline() {
+        let plan = LaunchPlan {
+            program: WorkerProgram::Bundled {
+                executable: PathBuf::from("/Applications/PocketGrid.app/Contents/Resources/worker/pocketgrid-worker"),
+                hf_home: PathBuf::from("/private/app-data/models/huggingface"),
+            },
+            identity: PathBuf::from("/private/app-data/desktop-workers/hash.json"),
+            server: "https://grid.example".into(),
+            session_token: TOKEN.into(),
+            backend: "auto".into(),
+        };
+        let command = plan.command();
+        assert_eq!(
+            command.get_program(),
+            "/Applications/PocketGrid.app/Contents/Resources/worker/pocketgrid-worker"
+        );
+        assert_eq!(command.get_current_dir(), Some(Path::new("/private/app-data/models")));
+        let arguments: Vec<_> = command
+            .get_args()
+            .map(|value| value.to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(&arguments[..3], ["run", "--server", "https://grid.example"]);
+        assert!(arguments.iter().any(|value| value == "--local-only"));
+        let env = |name: &str| {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == name)
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        };
+        assert_eq!(env("HF_HOME").as_deref(), Some("/private/app-data/models/huggingface"));
+        assert_eq!(env("HF_HUB_OFFLINE").as_deref(), Some("1"));
+        assert_eq!(env("POCKETGRID_SESSION_TOKEN").as_deref(), Some(TOKEN));
+    }
+
+    fn model_fixture_paths(name: &str) -> ModelPaths {
+        let models = std::env::temp_dir().join(format!("pocketgrid-models-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&models);
+        ModelPaths { hf_home: models.join("huggingface"), ready_marker: models.join(MODEL_READY_MARKER) }
+    }
+
+    fn await_model(runtime: &mut ModelRuntime, paths: &ModelPaths, phase: ModelPhase) -> ModelStatus {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            let status = runtime.refresh(paths);
+            if status.phase == phase {
+                return status;
+            }
+            assert!(Instant::now() < deadline, "model never reached {phase:?}: {status:?}");
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn model_download_marks_ready_only_after_a_successful_prepare() {
+        let paths = model_fixture_paths("success");
+        let mut runtime = ModelRuntime::default();
+        assert_eq!(runtime.refresh(&paths).phase, ModelPhase::Missing);
+        runtime.start(fake_child("success"), &paths);
+        await_model(&mut runtime, &paths, ModelPhase::Ready);
+        assert!(paths.ready_marker.is_file());
+        // A ready model is not downloaded again.
+        assert_eq!(runtime.start(fake_child("ready"), &paths).phase, ModelPhase::Ready);
+        assert!(runtime.child.is_none());
+        std::fs::remove_dir_all(paths.hf_home.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn failed_or_cancelled_downloads_are_retryable_and_never_marked_ready() {
+        let paths = model_fixture_paths("failure");
+        let mut runtime = ModelRuntime::default();
+        runtime.start(fake_child("exit"), &paths);
+        let failed = await_model(&mut runtime, &paths, ModelPhase::Failed);
+        assert!(failed.message.contains("download failed"));
+        assert!(!paths.ready_marker.is_file());
+
+        let manager = ModelManager::default();
+        let status = manager.lock().start(fake_child("ready"), &paths);
+        assert_eq!(status.phase, ModelPhase::Downloading);
+        let pid = manager.lock().child.as_ref().unwrap().process.id();
+        manager.cancel();
+        let cancelled = manager.lock().refresh(&paths);
+        assert_eq!(cancelled.phase, ModelPhase::Failed);
+        assert!(cancelled.message.contains("cancelled"));
+        assert!(!paths.ready_marker.is_file());
+        #[cfg(unix)]
+        assert!(!Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success());
+        std::fs::remove_dir_all(paths.hf_home.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn stored_bytes_counts_files_once_and_ignores_symlinks() {
+        let paths = model_fixture_paths("bytes");
+        let blobs = paths.hf_home.join("hub/models--segmind--tiny-sd/blobs");
+        std::fs::create_dir_all(&blobs).unwrap();
+        std::fs::write(blobs.join("weights"), vec![0u8; 1000]).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(blobs.join("weights"), paths.hf_home.join("link")).unwrap();
+        assert_eq!(stored_bytes(&paths.hf_home), 1000);
+        assert_eq!(stored_bytes(Path::new("/no/such/model/cache")), 0);
+        std::fs::remove_dir_all(paths.hf_home.parent().unwrap()).unwrap();
     }
 
     #[test]
@@ -731,6 +1085,7 @@ mod tests {
                 thread::sleep(Duration::from_secs(60));
             }
             Ok("exit") => std::process::exit(9),
+            Ok("success") => std::process::exit(0),
             _ => panic!("fixture mode required"),
         }
     }

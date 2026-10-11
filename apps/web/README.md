@@ -6,9 +6,9 @@ This client is intentionally small: join a grid, submit image jobs, share a fore
 
 Arboy with Codex owns the Mac and SwiftUI UX; the teammate with Claude owns the Tauri Android port. The shared client has **Create**, **Contribute** and **Activity** destinations. Keep visible text short and expose technical setup through disclosure. See [design and Android integration notes](../../docs/native-ui-design.md).
 
-Mac worker controls are gated by `isMacDesktop`. A Tauri runtime alone is insufficient because Android also uses Tauri. Keep `DesktopWorkerPanel` mounted when navigation changes: its cleanup deliberately stops the managed Python process. The shared UI and HTTP API must remain platform-neutral; Android native adapters and lifecycle work belong to the Android owner.
+Mac worker controls are gated by `isMacDesktop`. `platformFlags` in `src/platform.ts` recognizes `TAURI_ENV_PLATFORM` target names including `darwin` and `androideabi` (plus friendly aliases), falling back to the user agent only when that metadata is absent. Keep Vite’s `TAURI_ENV_` environment prefix: a Tauri runtime alone is insufficient because Android also uses Tauri. Keep `DesktopWorkerPanel` mounted when navigation changes: its cleanup deliberately stops the managed Python process. The shared UI and HTTP API must remain platform-neutral; Android native adapters and lifecycle work belong to the Android owner.
 
-Tauri windows use `create: false` in configuration and are explicitly bootstrapped from each window configuration in Rust setup, preserving configured properties. The macOS-only download handler accepts frontend-fetched `blob:` images and reports completion. Android owns its download integration; do not assume macOS WebKit download handling works there or create a duplicate automatic window.
+Tauri windows use `create: false` in configuration and are explicitly bootstrapped from each window configuration in `src-tauri/src/lib.rs` setup on all targets, preserving configured properties. The desktop `main.rs` delegates to that library entry point; iOS remains the separate native SwiftUI app. The macOS-only download handler accepts frontend-fetched `blob:` images and reports completion. Android owns its download integration; do not assume macOS WebKit download handling works there or create a duplicate automatic window.
 
 ## Run
 
@@ -33,13 +33,19 @@ npm run tauri build
 
 The release `.app` is placed under `src-tauri/target/release/bundle/macos`. This is an unsigned developer prototype, not a notarized distribution. The Mac app uses the same React client and a minimal Rust/Tauri host with the official notification plugin and user-triggered clipboard writing for device pairing. Set the coordinator URL to `http://127.0.0.1:8787` (or your grid host). Server CORS must allow the Tauri origin (`tauri://localhost` on macOS).
 
-Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect installed worker** in **Contribute**. The app finds its build checkout by default; **Installed worker settings** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
+### Bundled worker build
 
-Connect explicitly starts one local Python process, loads the cached model and registers it **paused** under the current account. It never installs packages or downloads models. Once connected, set CPU threads, image size and session duration on **This Mac image worker**, then press **Start sharing**. Connecting consumes model memory even while paused. CPU thread limits are not GPU percentage or RAM quotas.
+`npm run build:desktop` (`scripts/build-desktop-app.sh`, needs `uv`) freezes the Python worker with PyInstaller into `src-tauri/resources/worker/`, builds the app with `tauri.bundled-worker.conf.json`, which ships that folder as an app resource, then restores the symlinks Tauri expands so PyTorch is not stored twice. The integrated debug app measured 670 MB; rebuild size depends on platform and dependencies. Model weights are not bundled: in **Contribute**, **Download model · 1 GB** fetches the pinned Tiny-SD revision (about 1 GB) from Hugging Face into PocketGrid's app data, shows progress and can be cancelled. A successful download writes a ready marker only after the worker loads the model once. **Connect worker** then runs the bundled worker with `--local-only` and that cache, registering it paused. Model loading is offline; grid access still needs a coordinator connection. Choose **Start sharing** separately. The clay interface keeps progress and Cancel visible during download, with processor and setup details behind disclosure. The frozen worker is built for the machine's own platform and architecture, and is not yet code-signed or notarized.
 
-**Pause** stops accepting work and cancels active inference at a denoising boundary, while keeping the model loaded. **Disconnect worker**, **Leave**, reloading the interface or closing/quitting the app stops the managed process. Disconnect also asks the coordinator to pause the device; if the network is unavailable, its unfinished lease expires. Reconnecting always pauses the device again before it can claim work. A sharing session may continue while the Mac app is in the background, within the chosen limits; the canvas exporter still pauses when hidden.
+### Checkout worker (development)
 
-This is a prepared-checkout prototype, not a bundled worker installer. The app passes the account token through the child's environment, never a command argument or clipboard. It stores a separate private worker identity per coordinator origin and session under app data. Existing command-line workers remain independent and are not stopped by the app. For manual pairing, use **Copy worker pairing token** and `POCKETGRID_SESSION_TOKEN`; a matching display name alone is not account linking.
+Builds without the bundled worker (`npm run tauri dev`, `npm run tauri build`) keep the prepared-checkout flow below. Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect worker** in **Contribute**. The app finds its build checkout by default; **Worker setup & details** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
+
+Connect explicitly starts one local Python process, loads the cached model and registers it **paused** under the current account. It never installs packages or downloads models. Once connected, set CPU threads, image size and session duration in **Sharing limits**, then press **Start sharing**. Connecting consumes model memory even while paused. CPU thread limits are not GPU percentage or RAM quotas.
+
+**Pause** stops accepting work and cancels active inference at a denoising boundary, while keeping the model loaded. **Disconnect**, **Leave**, reloading the interface or closing/quitting the app stops the managed process. Disconnect also asks the coordinator to pause the device; if the network is unavailable, its unfinished lease expires. Reconnecting always pauses the device again before it can claim work. A sharing session may continue while the Mac app is in the background, within the chosen limits; the canvas exporter still pauses when hidden.
+
+In both modes the app passes the account token through the child's environment, never a command argument or clipboard. It stores a separate private worker identity per coordinator origin and session under app data. Existing command-line workers remain independent and are not stopped by the app. For manual pairing, use **Copy worker pairing token** and `POCKETGRID_SESSION_TOKEN`; a matching display name alone is not account linking.
 
 ## Behavior and security
 
@@ -63,7 +69,16 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 From the repository root, `node --experimental-strip-types --test apps/web/tests/desktopWorker.test.mjs` checks native-command ordering across disconnects and account changes. `workers/python/.venv/bin/python -m pytest tests/test_worker.py -q` checks paused registration and owner/server identity validation. Native process tests use an isolated fixture rather than image inference; one ignored test is that subprocess fixture.
 
-## Design-phase checks
+## Merge integration checks
+
+- The shared frontend passed 33 Node tests, including platform detection for `darwin` and `androideabi`. Rust passed 15 tests with one ignored subprocess fixture; Python worker checks passed 33 tests and packaging checks passed 7.
+- The bundled Mac debug app built successfully with a custom Cargo target directory and measured 670 MB. In its actual interface, Download, Cancel and Retry worked, and the real model download completed. Connect began paused; explicit Start enabled sharing, and navigating to Create preserved the managed worker.
+- Real request `551049f0` completed through **This Mac image worker** generation and **Mac Demo desktop window** finishing. Its receipt balanced 10 reserved = 7 contributor credits + 1 fee + 2 refunded. Native Save showed **Saved to Downloads**. Pausing both workers left them paused, then Disconnect showed **Disconnected**.
+- The Android frontend production build passed and native source was reviewed. Native Android compilation was unavailable because the host lacks the SDK/NDK. SDK license consent was not provided, and no license was accepted.
+
+The integrated end-to-end run used one physical Mac for generation and desktop-window finishing; it adds no physical-phone or multi-laptop failover evidence. Earlier results below retain their original build scope.
+
+## Earlier design-phase checks
 
 - Production web build and 28 Node regression tests passed. Rust checks passed with 11 tests passed and one ignored subprocess fixture; 45 coordinator tests passed.
 - The native Mac debug `.app` built and rendered. **Connect installed worker** connected paused, and the managed worker's explicit Start/Pause controls were verified.
