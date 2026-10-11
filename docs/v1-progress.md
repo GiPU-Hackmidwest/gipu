@@ -36,6 +36,25 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · dynamic pricing (branch `feat/dynamic-pricing`)
+
+- **Request (Sithabo):** more available computers make images slightly cheaper; fewer make them slightly more expensive.
+- **Coordinator** (`store.py`):
+  - `price_for(ready_to_create)` sets generation at 7 credits when 0–1 devices are ready, 6 when 2–3 are, and 5 when 4 or more are. Finishing and the fee stay 1, so one image costs 9, 8 or 7.
+  - `reserve_job` quotes from live `grid` counts, rejects a budget below the quote (422 "current quote of N"), and locks the prices into `plan.pricing`. `new_task` and the completion fee use the locked prices, so finishing tasks created later and retries cannot exceed the reservation. Jobs without `plan.pricing` (created before this change) keep 6/1/1.
+  - `/state.pricing` now shows the current price. `public_plan` exposes the locked `pricing` to the owner. The earned-credits event allowlist covers 1–9 credits.
+  - The Strands `quote_job` tool reports the job's locked quote.
+- **Clients:**
+  - Web: the estimate already used `state.pricing`, and the budget now follows the live minimum, so Create isn't left disabled when the price rises.
+  - iOS (Arboy is out of Codex quota; Sithabo asked Claude to finish features): `Snapshot.pricing` is optional, with a 6/1/1 fallback for older coordinators. The estimate, stepper floor and Create guard use it, and the budget follows the minimum.
+- **Docs:** `docs/protocol.md` describes the pricing rule and the locking.
+- **Verification:**
+  - Coordinator: 83 passed, including 6 new tests in `tests/test_pricing.py` (curve, live snapshot price, budget below quote, price locked through a supply drop with receipt `10 = 6 + 1 + 3`, legacy jobs, owner view).
+  - Three fixed-price tests now expect the one-laptop price of 7.
+  - Web: 83 tests, `tsc -b` and build passed.
+  - iOS: `swiftc -typecheck` against the iOS 17 simulator SDK found 0 errors. No simulator run, because this Mac has no iOS runtime installed.
+- **Note:** the coordinator must be redeployed for live pricing. Older iOS builds still show the fixed 8-credit estimate and can be refused when the price is 9; the 422 message states the needed amount.
+
 ### 2026-10-11 · Codex · manual workflow integration (PR #33)
 
 - Arboy explicitly approved restoring the workflow and requested this merge. This supersedes the earlier local-only restriction. Preserve the manual Android/Mac build and optional draft-release path.

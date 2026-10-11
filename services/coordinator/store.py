@@ -43,6 +43,21 @@ PLANNING_ATTEMPTS = 3
 ACTIVE = ('planning', 'queued', 'running')
 # Link codes avoid characters that are easy to misread when typed.
 LINK_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
+LEGACY_PRICING = {'generate': 6, 'finalize': 1, 'fee': 1}
+
+
+def price_for(ready_to_create):
+    """Generation credits per image from live supply: more ready laptops cost slightly less.
+
+    0-1 ready: 7, 2-3: 6 (the original fixed price), 4 or more: 5. Finishing and the
+    fee stay at 1. The coordinator locks the result into each job when it reserves
+    the budget, so later supply changes never alter what an accepted request pays."""
+    generate = 5 if ready_to_create >= 4 else 6 if ready_to_create >= 2 else 7
+    return {'generate': generate, 'finalize': 1, 'fee': 1}
+
+
+def quote(count, pricing):
+    return count * (pricing['generate'] + pricing['finalize']) + pricing['fee']
 LINK_SECONDS = 120
 DEVICE_WORDS = {'python': 'laptop', 'ios': 'phone', 'browser': 'device'}
 
@@ -282,7 +297,7 @@ class Store:
                       VALUES(?,?,?,'queued',?,?,?,?,?,?,?,?)''',
                    (task_id, job['id'], kind, variant, job['prompt'], job['width'], job['height'], job['steps'],
                     int(hashlib.sha256(f'{job["id"]}:{variant}'.encode()).hexdigest()[:7], 16),
-                    6 if kind == 'image_generate' else 1, source))
+                    self.job_pricing(db, job['id'])['generate' if kind == 'image_generate' else 'finalize'], source))
         if kind == 'image_finalize':
             # This stage may become ready long after dispatch's generation window.
             # Give its original selection a fresh bounded window when work exists.
@@ -430,11 +445,22 @@ class Store:
                        'Strands review unavailable; deterministic recovery remains active' if error else 'Strands checked execution results and routing',job_id=job_id)
             return True
 
+    def current_pricing(self, db):
+        grid = self.grid_counts(db)
+        return price_for(grid['ready_to_create'])
+
+    def job_pricing(self, db, job_id):
+        """The prices locked when the job reserved its budget; older jobs used fixed prices."""
+        plan = json.loads(db.execute('SELECT plan FROM jobs WHERE id=?', (job_id,)).fetchone()[0])
+        return plan.get('pricing') or LEGACY_PRICING
+
     def reserve_job(self, db, user_id, request, status, plan):
         """Insert a job and reserve its full budget; caller has checked idempotency."""
-        minimum = request['count'] * 7 + 1
+        pricing = self.current_pricing(db)
+        minimum = quote(request['count'], pricing)
         if request['budget'] < minimum:
-            fail(422, f'Budget must cover the fixed quote of {minimum} sandbox credits')
+            fail(422, f'Budget must cover the current quote of {minimum} sandbox credits')
+        plan = dict(plan, pricing=pricing)
         active = db.execute(f"SELECT COUNT(*) FROM jobs WHERE owner_id=? AND status IN {ACTIVE}", (user_id,)).fetchone()[0]
         if active >= 10:
             fail(409, 'Finish or cancel an existing job first')
@@ -663,8 +689,9 @@ class Store:
             if task['kind'] == 'image_generate':
                 self.new_task(db, job, task['variant'], 'image_finalize', task_id)
             if db.execute("SELECT COUNT(*) FROM tasks WHERE job_id=? AND status!='completed'", (job['id'],)).fetchone()[0] == 0:
-                refund = job['budget'] - job['spent'] - 1
-                db.execute("UPDATE jobs SET status='completed',fee=1,spent=spent+1,refunded=? WHERE id=?", (refund, job['id']))
+                fee = self.job_pricing(db, job['id'])['fee']
+                refund = job['budget'] - job['spent'] - fee
+                db.execute("UPDATE jobs SET status='completed',fee=?,spent=spent+?,refunded=? WHERE id=?", (fee, fee, refund, job['id']))
                 db.execute('UPDATE users SET balance=balance+? WHERE id=?', (refund, job['owner_id']))
                 self.ledger(db, job['owner_id'], job['id'], 'refund', refund, 'Unused reservation returned')
                 self.event(db, 'job_completed', 'Images ready. Contributors paid; unused credits returned.', job_id=job['id'])
@@ -738,6 +765,9 @@ class Store:
                              if stage in ('image_generate', 'image_finalize')}}
         if isinstance(plan.get('routing_until'), (int, float)):
             result['routing_until'] = plan['routing_until']
+        pricing = plan.get('pricing')
+        if isinstance(pricing, dict) and all(isinstance(pricing.get(k), int) for k in ('generate', 'finalize', 'fee')):
+            result['pricing'] = {k: pricing[k] for k in ('generate', 'finalize', 'fee')}
         for key in ('planning', 'review'):
             if key not in plan:
                 continue
@@ -836,7 +866,7 @@ class Store:
                 message = f'{subject} reached its contribution time limit' if event['message'] == 'Contribution time limit reached' else f'{subject} paused sharing'
             elif event['kind'] == 'credits_earned' and mine:
                 # This exact coordinator-generated format has no arbitrary text.
-                earned_messages = {f'{price} sandbox credits earned for accepted work' for price in (1, 6)}
+                earned_messages = {f'{price} sandbox credits earned for accepted work' for price in range(1, 10)}
                 message = event['message'] if event['message'] in earned_messages else 'Sandbox credits earned for accepted work'
             elif event['kind'] in ('job_created', 'job_planning') and event['job_id'] in jobs:
                 job = jobs[event['job_id']]
@@ -875,7 +905,7 @@ class Store:
                 'jobs': [self.public_job(db, self.job(db, row['id']), user_id) for row in db.execute('SELECT id FROM jobs WHERE owner_id=? ORDER BY created_at DESC LIMIT 30', (user_id,))],
                 'events': self.public_events(db, user_id),
                 'ledger': self.public_ledger(db, user_id),
-                'pricing': {'generate': 6, 'finalize': 1, 'fee': 1}, 'server_time': self.clock(),
+                'pricing': self.current_pricing(db), 'server_time': self.clock(),
             }
 
     def tick(self):

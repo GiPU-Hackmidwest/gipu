@@ -53,16 +53,16 @@ def test_conserved_credits_and_duplicate_completion(setup):
     job = submit(store,buyer)
     assert store.snapshot(buyer)['balance'] == 90
     task = store.claim(laptop)['task']
-    assert accepted(store,laptop,task)['earned'] == 6
+    assert accepted(store,laptop,task)['earned'] == 7  # One ready laptop: scarce-supply price.
     assert accepted(store,laptop,task)['duplicate'] is True
     export = store.claim(laptop)['task']
     assert export['kind'] == 'image_finalize'
     accepted(store,laptop,export,True)
     snapshot = store.snapshot(buyer)
     receipt = snapshot['jobs'][0]['receipt']
-    assert receipt == {'budget':10,'contributor_total':7,'platform_fee':1,'refund':2,'total_charged':8}
-    assert snapshot['balance'] == 92 and snapshot['reserved'] == 0
-    assert store.snapshot(seller)['balance'] == 107
+    assert receipt == {'budget':10,'contributor_total':8,'platform_fee':1,'refund':1,'total_charged':9}
+    assert snapshot['balance'] == 91 and snapshot['reserved'] == 0
+    assert store.snapshot(seller)['balance'] == 108
     assert snapshot['balance'] + store.snapshot(seller)['balance'] + receipt['platform_fee'] == 200
     assert len(snapshot['jobs'][0]['images']) == 2
     assert 'lease_id' not in snapshot['jobs'][0]['tasks'][0]
@@ -142,7 +142,7 @@ def test_rejects_forged_export_without_paying(setup):
     with pytest.raises(HTTPException) as error:
         store.complete(worker,export['id'],export['lease_id'],png(True,'blue'),{})
     assert error.value.status_code == 422
-    assert store.snapshot(seller)['earned'] == 6
+    assert store.snapshot(seller)['earned'] == 7
     accepted(store,worker,export,True)
 
 
@@ -152,10 +152,10 @@ def test_cancel_after_partial_work_keeps_payment_and_refunds_rest(setup):
     job = submit(store,buyer)
     accepted(store,worker,store.claim(worker)['task'])
     cancelled = store.cancel(buyer,job['id'])
-    assert cancelled['receipt']['refund'] == 4
+    assert cancelled['receipt']['refund'] == 3
     assert cancelled['receipt']['platform_fee'] == 0
-    assert store.snapshot(buyer)['balance'] == 94
-    assert store.snapshot(seller)['balance'] == 106
+    assert store.snapshot(buyer)['balance'] == 93
+    assert store.snapshot(seller)['balance'] == 107
 
 
 def test_bounded_retries_refund_and_survive_restart(setup):

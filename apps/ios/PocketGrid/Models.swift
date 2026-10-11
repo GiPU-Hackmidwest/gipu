@@ -91,11 +91,19 @@ struct GridEvent: Decodable, Identifiable {
     }
 }
 struct AgentStatus: Decodable { let mode: String; let available: Bool }
+/// Per-image credits from live grid supply; the coordinator locks them into each request.
+struct Pricing: Decodable, Equatable {
+    let generate: Int; let finalize: Int; let fee: Int
+    static let fixed = Pricing(generate: 6, finalize: 1, fee: 1)
+    func quote(_ count: Int) -> Int { count * (generate + finalize) + fee }
+}
+
 struct Snapshot: Decodable {
     let user: GridUser; let balance: Int; let reserved: Int; let earned: Int
     let devices: [Device]; let jobs: [GridJob]; let events: [GridEvent]; let agent: AgentStatus
     let server_time: Double?
     var grid: GridCounts? = nil
+    var pricing: Pricing? = nil
 
     var ownDevices: [Device] { devices.filter { $0.owner_id == user.id } }
     var ownJobs: [GridJob] { jobs.filter { $0.owner_id == user.id } }

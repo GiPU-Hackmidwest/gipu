@@ -228,7 +228,9 @@ def plan_once(store):
     @tool
     def quote_job() -> dict:
         """Get the immutable price and user's authorized budget. Credits are sandbox units."""
-        return _record(log, 'quote_job', {'quote': request['count'] * 7 + 1, 'budget': request['budget'],
+        from .store import LEGACY_PRICING, quote
+        pricing = job['plan'].get('pricing') or LEGACY_PRICING  # Locked when the budget was reserved.
+        return _record(log, 'quote_job', {'quote': quote(request['count'], pricing), 'prices': pricing, 'budget': request['budget'],
                        'pipeline': 'image_generate on Python; image_finalize on Python/browser/iOS',
                        'variants': request['count']})
 

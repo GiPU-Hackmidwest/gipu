@@ -270,6 +270,7 @@ private struct CreateView: View {
     @State private var prompt = "A cat riding a tiny bicycle, playful illustration"
     @State private var count = 1
     @State private var budget = 10
+    private var minimum: Int { (grid.snapshot?.pricing ?? .fixed).quote(count) }
     @AppStorage("gipu.developerOptionsEnabled") private var developerOptionsEnabled = false
     @AppStorage("gipu.usePlanner") private var useAgent = false
     var body: some View {
@@ -281,20 +282,20 @@ private struct CreateView: View {
                         TextField("What do you imagine?", text: $prompt, axis: .vertical)
                             .font(.title3).lineLimit(3...6).accessibilityLabel("Image prompt")
                         HStack {
-                            Text("\(count * 7 + 1) credits estimated").font(.caption).foregroundStyle(GridStyle.muted)
+                            Text("\(minimum) credits estimated").font(.caption).foregroundStyle(GridStyle.muted)
                             Spacer()
                             Text("\(grid.snapshot?.balance ?? 0) available").font(.caption).foregroundStyle(GridStyle.muted)
                         }
                         DisclosureGroup("Options") {
                             VStack(spacing: 18) {
                                 Stepper("Images: \(count)", value: $count, in: 1...4)
-                                    .onChange(of: count) { _, value in budget = max(budget, value * 7 + 1) }
-                                Stepper("Budget: \(budget)", value: $budget, in: (count * 7 + 1)...100)
+                                    .onChange(of: minimum, initial: true) { _, value in budget = max(budget, value) }
+                                Stepper("Budget: \(budget)", value: $budget, in: minimum...100)
                             }.padding(.top, 18)
                         }.font(.subheadline)
                         Button { Task { await grid.submit(prompt: prompt, count: count, budget: budget, useAgent: developerOptionsEnabled && useAgent) } } label: {
                             HStack { Text(grid.submitting ? "Creating…" : "Create image"); if grid.submitting { ProgressView() } }
-                        }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.submitting || grid.snapshot == nil || budget > (grid.snapshot?.balance ?? 0) || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
+                        }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.submitting || grid.snapshot == nil || budget < minimum || budget > (grid.snapshot?.balance ?? 0) || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
                         Text("Reserves \(budget) credits. Unused credits return.").font(.caption).foregroundStyle(GridStyle.muted)
                     }.gridPanel()
                     if let notice = grid.notice { Text(notice).font(.footnote).foregroundStyle(GridStyle.muted).frame(maxWidth: .infinity, alignment: .leading) }
