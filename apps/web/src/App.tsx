@@ -3,7 +3,8 @@ import type { FormEvent } from 'react';
 import { Api, askNotifications, copyText, errorMessage, isDesktop, notify } from './api';
 import { BrowserWorker } from './browserWorker';
 import { shouldNotifyEvent } from './eventNotifications';
-import { jobProgress } from './jobStatus';
+import { canCancelJob, jobAcknowledgement, jobProgress } from './jobStatus';
+import { initialJobSync, mergeJobResponses, reconcileSnapshot, retainJobResponse, snapshotIsCurrent } from './jobSync';
 import type { Device, DeviceCredential, Job, Limits, Session, Snapshot } from './types';
 
 const sessionKey = 'pocketgrid.session.v1';
@@ -39,6 +40,8 @@ function SignIn({ onSession }: { onSession: (session: Session) => void }) {
 function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
   const api = useMemo(() => new Api(session.server, session.token), [session.server, session.token]);
   const [state, setState] = useState<Snapshot | null>(null);
+  const jobSync = useRef(initialJobSync());
+  const refreshSequence = useRef(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
   const [notifying, setNotifying] = useState(false);
@@ -55,8 +58,14 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   const [deviceName, setDeviceName] = useState(`${session.name}’s ${isDesktop ? 'desktop window' : 'browser'}`);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
-    const next = await api.request<Snapshot>('/state', undefined, undefined, signal);
-    setState(next); setError('');
+    const request = { revision: jobSync.current.revision, sequence: ++refreshSequence.current };
+    let next: Snapshot;
+    try { next = await api.request<Snapshot>('/state', undefined, undefined, signal); }
+    catch (error) { if (!snapshotIsCurrent(jobSync.current, request)) return; throw error; }
+    const result = reconcileSnapshot(jobSync.current, request, next);
+    if (!result) return;
+    jobSync.current = result.sync;
+    setState(result.snapshot); setError('');
     if (seen.current) {
       for (const event of next.events) if (!seen.current.has(event.id)) {
         seen.current.add(event.id);
@@ -95,6 +104,21 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
     };
   }, [api, credentialKey]);
 
+  function onJobResponse(job: Job) {
+    jobSync.current = retainJobResponse(jobSync.current, job);
+    const retained = jobSync.current.retained;
+    setState(previous => previous ? { ...previous, jobs: mergeJobResponses(previous.jobs, retained) } : previous);
+    // The write is already acknowledged. Refresh failure must not become a submit failure.
+    void refresh().catch(error => setError(`Request ${job.id.slice(0, 8)} was saved, but live updates are unavailable: ${errorMessage(error)}. You do not need to submit it again.`));
+  }
+  async function cancelJob(jobId: string) {
+    setBusy(jobId); setError('');
+    let job: Job;
+    try { job = await api.request<Job>(`/jobs/${jobId}/cancel`, {}); }
+    catch (error) { setError(errorMessage(error)); return; }
+    finally { setBusy(''); }
+    onJobResponse(job);
+  }
   async function action(label: string, work: () => Promise<void>) { setBusy(label); setError(''); try { await work(); await refresh(); } catch (error) { setError(errorMessage(error)); } finally { setBusy(''); } }
   async function startLocal() {
     const epoch = ++contributionEpoch.current;
@@ -120,9 +144,9 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   return <div className="shell"><header><div className="brand">◉ PocketGrid <span>{isDesktop ? 'Mac prototype' : 'prototype'}</span></div><div className="header-actions"><span>{session.name}</span><button className="subtle" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears below.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button><button className="subtle" onClick={onSignOut}>Leave</button></div></header>
     <div className="intro"><div><p className="eyebrow">Your devices. Real work.</p><h1>What should the grid make?</h1><p>Local image generation, shared export work, and a clear receipt.</p></div><div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div><small>Sandbox credits · no cash value</small></div></div>
     {error && <div className="error banner" role="alert">{error}</div>}
-    <div className="main-grid"><section className="panel"><CreateJob api={api} state={state} onCreated={() => refresh()} /></section><section className="panel stack"><div className="section-title"><h2>Share this device</h2><span className={`badge ${localDevice?.enabled ? 'good' : ''}`}>{localDevice?.enabled ? 'Sharing' : 'Paused'}</span></div><p>This window can export images with a verified teal frame. A Python laptop worker runs the image model.</p><label>Device name<input value={deviceName} disabled={!!localId} onChange={e => setDeviceName(e.target.value)} maxLength={80} /></label><LimitsForm value={limits} onChange={setLimits} /><div className="button-row"><button disabled={!!busy} onClick={() => void startLocal()}>{localDevice?.enabled ? 'Apply limits / restart' : 'Start sharing'}</button><button className="secondary" disabled={!!busy || !localDevice?.enabled} onClick={() => void pauseLocal()}>Pause now</button></div><p className="worker-status" role="status">{workerMessage}</p><small>One export at a time. Foreground only. Switching tabs or closing the window pauses sharing. Pixel and time limits are enforced; this is not a CPU percentage cap.</small></section></div>
+    <div className="main-grid"><section className="panel"><CreateJob api={api} state={state} onCreated={onJobResponse} /></section><section className="panel stack"><div className="section-title"><h2>Share this device</h2><span className={`badge ${localDevice?.enabled ? 'good' : ''}`}>{localDevice?.enabled ? 'Sharing' : 'Paused'}</span></div><p>This window can export images with a verified teal frame. A Python laptop worker runs the image model.</p><label>Device name<input value={deviceName} disabled={!!localId} onChange={e => setDeviceName(e.target.value)} maxLength={80} /></label><LimitsForm value={limits} onChange={setLimits} /><div className="button-row"><button disabled={!!busy} onClick={() => void startLocal()}>{localDevice?.enabled ? 'Apply limits / restart' : 'Start sharing'}</button><button className="secondary" disabled={!!busy || !localDevice?.enabled} onClick={() => void pauseLocal()}>Pause now</button></div><p className="worker-status" role="status">{workerMessage}</p><small>One export at a time. Foreground only. Switching tabs or closing the window pauses sharing. Pixel and time limits are enforced; this is not a CPU percentage cap.</small></section></div>
     <section className="panel"><div className="section-title"><h2>Devices in the grid</h2><span>{state?.devices.filter(device => device.online).length ?? 0} online</span></div><div className="device-grid">{state?.devices.length ? state.devices.map(device => <DeviceCard key={device.id} device={device} own={device.owner_id === state.user.id} local={device.id === localId} busy={!!busy} onUpdate={patch => action(device.id, async () => { if (device.id === localId) { if (patch.enabled === false) { contributionEpoch.current += 1; worker.current?.stop(); setWorkerMessage('Sharing paused.'); } if (patch.enabled === true) { await startLocal(); return; } } await api.request(`/devices/${device.id}`, patch, 'PATCH'); })} />) : <p className="empty">No devices yet. Start sharing here or connect a Python generation worker.</p>}</div><details className="setup"><summary>Connect a laptop that can generate images</summary><p>Run the Python worker from this repository on a laptop with the local model installed. Copy your pairing token below and set <code>POCKETGRID_SESSION_TOKEN</code> when launching the worker to make that laptop controllable from this session. A matching display name alone does not link accounts. See <code>workers/python/README.md</code> for model installation; wait for the model-ready message before your demo.</p><button className="secondary" onClick={() => { void action('pairing', async () => { await copyText(session.token); setPairingCopied(true); }); }}>{pairingCopied ? 'Pairing token copied' : 'Copy worker pairing token'}</button><small>This token grants access to your demo account. Paste it only into your own worker terminal; never share it in a prompt or screenshot.</small><p>Image generation runs on that laptop’s CPU or supported GPU. This desktop window does not bundle the model or start a hidden Python process. Other devices perform image exports.</p><p>Coordinator: <code>{session.server || location.origin}</code></p></details></section>
-    <section className="panel"><div className="section-title"><h2>Jobs & results</h2><span>Visible to your demo grid</span></div><div className="jobs">{state?.jobs.length ? state.jobs.map(job => <JobCard key={job.id} api={api} job={job} own={job.owner_id === state.user.id} devices={state.devices} now={state.server_time} canStartExport={!localDevice?.enabled && limits.max_pixels >= job.width * job.height} onStartExport={startLocal} busy={!!busy} onCancel={() => action(job.id, async () => { await api.request(`/jobs/${job.id}/cancel`, {}); })} />) : <p className="empty">Describe an image to start. Jobs wait safely until a capable device is sharing.</p>}</div></section>
+    <section className="panel"><div className="section-title"><h2>Jobs & results</h2><span>Visible to your demo grid</span></div><div className="jobs">{state?.jobs.length ? state.jobs.map(job => <JobCard key={job.id} api={api} job={job} own={job.owner_id === state.user.id} devices={state.devices} now={state.server_time} canStartExport={!localDevice?.enabled && limits.max_pixels >= job.width * job.height} onStartExport={startLocal} busy={!!busy} onCancel={() => cancelJob(job.id)} />) : <p className="empty">Describe an image to start. Jobs wait safely until a capable device is sharing.</p>}</div></section>
     <div className="main-grid"><section className="panel"><h2>Live activity</h2><div className="events" aria-live="polite">{state?.events.length ? state.events.slice(0, 30).map(event => <div className="event" key={event.id}><time>{displayTime(event.created_at)}</time><span>{event.message}</span></div>) : <p className="empty">Task starts, reassignments, and earned credits appear here.</p>}</div></section><section className="panel"><h2>My credit ledger</h2><div className="events">{state?.ledger.length ? state.ledger.slice(0, 30).map(row => <div className="ledger-row" key={row.id}><div><span>{row.note || row.kind.replaceAll('_', ' ')}</span><small>{displayTime(row.created_at)}</small></div><strong className={row.amount > 0 ? 'positive' : ''}>{row.amount > 0 ? '+' : ''}{row.amount}</strong></div>) : <p className="empty">Budget reservations, accepted work, and refunds appear here.</p>}</div></section></div>
     <footer>Invite-only prototype · public demo prompts only · generated images are checked for format, not semantic correctness · no cloud image inference</footer>
   </div>;
@@ -132,19 +156,29 @@ function LimitsForm({ value, onChange, cpu = false }: { value: Limits; onChange:
   return <div className="limits">{cpu && <label>CPU threads<input type="number" min="1" max="8" value={value.cpu_threads} onChange={e => onChange({ ...value, cpu_threads: Number(e.target.value) })} /></label>}<label>Largest image<select value={value.max_pixels} onChange={e => onChange({ ...value, max_pixels: Number(e.target.value) })}><option value={65536}>256 × 256</option><option value={147456}>384 × 384</option><option value={262144}>512 × 512</option></select></label><label>Share for<select value={value.session_minutes} onChange={e => onChange({ ...value, session_minutes: Number(e.target.value) })}><option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div>;
 }
 
-function CreateJob({ api, state, onCreated }: { api: Api; state: Snapshot | null; onCreated: () => Promise<void> }) {
+function CreateJob({ api, state, onCreated }: { api: Api; state: Snapshot | null; onCreated: (job: Job) => void }) {
   const [prompt, setPrompt] = useState('A cat riding a tiny bicycle, playful illustration');
   const [count, setCount] = useState(1); const [size, setSize] = useState(256); const [steps, setSteps] = useState(12); const [budget, setBudget] = useState(10); const [agent, setAgent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const minimum = count * ((state?.pricing.generate ?? 6) + (state?.pricing.finalize ?? 1)) + (state?.pricing.fee ?? 1);
   const pendingRequest = useRef<{ payload: string; id: string } | null>(null);
+  const submitting = useRef(false);
+  const [accepted, setAccepted] = useState<Job | null>(null);
+  const acceptedJob = state?.jobs.find(job => job.id === accepted?.id) ?? accepted;
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
+    event.preventDefault();
+    if (submitting.current) return;
+    submitting.current = true; setBusy(true); setError(''); setAccepted(null);
     const payload = { prompt: prompt.trim(), count, width: size, height: size, steps, budget, use_agent: agent };
     const serialized = JSON.stringify(payload);
     if (pendingRequest.current?.payload !== serialized) pendingRequest.current = { payload: serialized, id: uniqueId() };
-    try { await api.request('/jobs', { ...payload, request_id: pendingRequest.current.id }); pendingRequest.current = null; await onCreated(); } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
+    let job: Job;
+    try { job = await api.request<Job>('/jobs', { ...payload, request_id: pendingRequest.current.id }); }
+    catch (error) { setError(errorMessage(error)); return; }
+    finally { submitting.current = false; setBusy(false); }
+    pendingRequest.current = null; setAccepted(job);
+    onCreated(job);
   }
-  return <form className="stack" onSubmit={submit}><h2>Create an image</h2><label>What would you like to see?<textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3} maxLength={1000} required /></label><div className="limits"><label>Images<select value={count} onChange={e => { const next = Number(e.target.value); setCount(next); setBudget(Math.max(budget, next * 7 + 1)); }}>{[1, 2, 3, 4].map(value => <option key={value}>{value}</option>)}</select></label><label>Size<select value={size} onChange={e => setSize(Number(e.target.value))}>{[256, 384, 512].map(value => <option key={value} value={value}>{value} × {value}</option>)}</select></label><label>Model steps<input type="number" min="4" max="30" value={steps} onChange={e => setSteps(Number(e.target.value))} required /></label></div><label>Maximum budget <span className="muted">(sandbox credits)</span><input type="number" min={minimum} max={state?.balance ?? 100} value={budget} onChange={e => setBudget(Number(e.target.value))} required /></label><small>{minimum} credits quoted: {count * (state?.pricing.generate ?? 6)} generation + {count * (state?.pricing.finalize ?? 1)} export + {state?.pricing.fee ?? 1} service fee. We reserve your budget and return unused credits.</small><label className="check"><input type="checkbox" checked={agent} onChange={e => setAgent(e.target.checked)} disabled={!state?.agent.available} />Plan with AWS Strands{!state?.agent.available && <span className="muted"> (not configured)</span>}</label>{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !state || !prompt.trim() || budget < minimum || budget > (state?.balance ?? 0)}>{busy ? agent ? 'Agent planning · please wait…' : 'Submitting request…' : `Create · reserve ${budget} credits`}</button><small>Each image is generated on one compatible laptop. Multiple images can use multiple laptops. Phones and browsers do the export step.</small></form>;
+  return <form className="stack" onSubmit={submit}><h2>Create an image</h2><label>What would you like to see?<textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3} maxLength={1000} required /></label><div className="limits"><label>Images<select value={count} onChange={e => { const next = Number(e.target.value); setCount(next); setBudget(Math.max(budget, next * 7 + 1)); }}>{[1, 2, 3, 4].map(value => <option key={value}>{value}</option>)}</select></label><label>Size<select value={size} onChange={e => setSize(Number(e.target.value))}>{[256, 384, 512].map(value => <option key={value} value={value}>{value} × {value}</option>)}</select></label><label>Model steps<input type="number" min="4" max="30" value={steps} onChange={e => setSteps(Number(e.target.value))} required /></label></div><label>Maximum budget <span className="muted">(sandbox credits)</span><input type="number" min={minimum} max={state?.balance ?? 100} value={budget} onChange={e => setBudget(Number(e.target.value))} required /></label><small>{minimum} credits quoted: {count * (state?.pricing.generate ?? 6)} generation + {count * (state?.pricing.finalize ?? 1)} export + {state?.pricing.fee ?? 1} service fee. We reserve your budget and return unused credits.</small><label className="check"><input type="checkbox" checked={agent} onChange={e => setAgent(e.target.checked)} disabled={!state?.agent.available} />Plan with AWS Strands{!state?.agent.available && <span className="muted"> (not configured)</span>}</label>{acceptedJob && <p className="worker-status" role="status">{jobAcknowledgement(acceptedJob)}</p>}{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !state || !prompt.trim() || budget < minimum || budget > (state?.balance ?? 0)}>{busy ? 'Submitting request…' : `Create · reserve ${budget} credits`}</button><small>Each image is generated on one compatible laptop. Multiple images can use multiple laptops. Phones and browsers do the export step.</small></form>;
 }
 
 function DeviceCard({ device, own, local, busy, onUpdate }: { device: Device; own: boolean; local: boolean; busy: boolean; onUpdate: (patch: { enabled?: boolean; limits?: Limits }) => Promise<void> }) {
@@ -160,16 +194,15 @@ function JobCard({ api, job, devices, now, canStartExport, onStartExport, own, b
     <div className="section-title"><h3>{job.prompt}</h3><span className={`badge ${job.status === 'completed' ? 'good' : ''}`}>{job.status}</span></div>
     <div className="job-progress">
       <strong>{progress.title}</strong><p>{progress.detail}</p>
-      <progress value={progress.completed} max={progress.total} aria-label="Completed generation and export steps" />
-      <small>{progress.generated}/{job.count} generated · {progress.finalized}/{job.count} exports verified</small>
+      {job.status !== 'planning' && <><progress value={progress.completed} max={progress.total} aria-label="Completed generation and export steps" /><small>{progress.generated}/{job.count} generated · {progress.finalized}/{job.count} exports verified</small></>}
       {progress.waitingForExport && canStartExport && <><button className="secondary" disabled={busy} onClick={() => void onStartExport()}>Start this window to finish images</button><small>Uses your contribution settings above. Keep this window open; pause anytime under Share this device.</small></>}
     </div>
     <small>{job.id.slice(0, 8)} · {job.count} image{job.count > 1 ? 's' : ''} · {job.width} × {job.height}</small>
     <details><summary>Agent plan · {job.plan.mode}</summary><p>{job.plan.explanation}</p></details>
     <div className="task-list">{job.tasks.map(task => <div key={task.id} className="task"><div><span>{task.kind === 'image_generate' ? 'Generate' : 'Export'} image {task.variant + 1}</span><small>{task.device_id ? devices.find(device => device.id === task.device_id)?.name || 'Assigned device' : task.status === 'queued' ? 'Awaiting assignment' : 'No active assignment'}{task.attempts > 1 ? ` · attempt ${task.attempts}` : ''}</small></div><span className="muted">{task.status === 'running' ? `${Math.round((task.progress || 0) * 100)}%` : task.status}</span></div>)}</div>
     {images.length > 0 && <div className="gallery">{images.map(image => <ImageCard key={image.task_id} api={api} path={image.url} title={`Image ${image.variant + 1}`} stage={image.stage} />)}</div>}
-    {job.receipt ? <div className="receipt"><strong>Receipt</strong><span>Reserved {job.receipt.budget}</span><span>Contributors {job.receipt.contributor_total}</span><span>Service fee {job.receipt.platform_fee}</span><span>Refund {job.receipt.refund}</span><strong>Charged {job.receipt.total_charged}</strong></div> : <p className="muted">Budget {job.budget} · accepted work paid {job.spent} · returned {job.refunded}</p>}
-    {own && ['queued', 'running'].includes(job.status) && <button className="secondary" disabled={busy} onClick={() => void onCancel()}>Cancel & release remaining budget</button>}
+    {job.receipt ? <div className="receipt"><strong>Receipt</strong><span>Reserved {job.receipt.budget}</span><span>Contributors {job.receipt.contributor_total}</span><span>Service fee {job.receipt.platform_fee}</span><span>Refund {job.receipt.refund}</span><strong>Charged {job.receipt.total_charged}</strong></div> : <p className="muted">Budget {job.budget} · still reserved {job.reserved} · accepted work paid {job.spent} · returned {job.refunded}</p>}
+    {own && canCancelJob(job) && <button className="secondary" disabled={busy} onClick={() => void onCancel()}>Cancel & release remaining budget</button>}
   </article>;
 }
 

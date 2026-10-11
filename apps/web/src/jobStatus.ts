@@ -10,6 +10,17 @@ export type JobProgress = {
   waitingForExport: boolean;
 };
 
+export function canCancelJob(job: Pick<Job, 'status'>): boolean {
+  return ['planning', 'queued', 'running'].includes(job.status);
+}
+
+export function jobAcknowledgement(job: Pick<Job, 'id' | 'status'>): string {
+  const prefix = `Request ${job.id.slice(0, 8)} saved.`;
+  if (job.status === 'planning') return `${prefix} Follow planning and cancel if needed under Jobs & results.`;
+  if (['completed', 'cancelled', 'failed'].includes(job.status)) return `${prefix} It is ${job.status}; see its result and receipt below.`;
+  return `${prefix} Follow its progress under Jobs & results.`;
+}
+
 export function eligibleDevices(devices: Device[], kind: string, pixels: number, now: number): Device[] {
   if (!Number.isFinite(now)) return [];
   return devices.filter(device => device.online && device.enabled
@@ -23,8 +34,24 @@ export function jobProgress(job: Job, devices: Device[], now: number): JobProgre
   const base = { generated, finalized, completed: generated + finalized, total: job.count * 2, waitingForExport: false };
   if (job.status === 'completed') return { ...base, title: 'Images ready', detail: 'Generation and export are complete. Your receipt shows the final charge and refund.' };
   if (job.status === 'cancelled') return { ...base, title: 'Request cancelled', detail: 'Accepted work stays paid; remaining reserved credits are returned.' };
-  if (job.status === 'failed') return { ...base, title: 'Request failed', detail: 'The grid could not finish this request. Check activity and the credit ledger for the outcome.' };
-  if (job.status === 'planning') return { ...base, title: 'Planning your request', detail: 'The agent is checking the grid. No image generation has been confirmed yet.' };
+  if (job.status === 'failed') {
+    if (job.plan?.planning?.status === 'failed' && job.tasks.length === 0) {
+      const receipt = job.receipt;
+      const fullyRefunded = receipt && receipt.budget === job.budget && receipt.refund === job.budget
+        && receipt.total_charged === 0 && receipt.contributor_total === 0 && receipt.platform_fee === 0;
+      return { ...base, title: 'Planning failed', detail: fullyRefunded
+        ? `No image work started. All ${receipt.refund} reserved sandbox credits were returned.`
+        : 'No image work started. Check the receipt and credit ledger for the refund status.' };
+    }
+    return { ...base, title: 'Request failed', detail: 'The grid could not finish this request. Check activity and the credit ledger for the outcome.' };
+  }
+  if (job.status === 'planning') {
+    const planning = job.plan?.planning;
+    const reserved = Number.isFinite(job.reserved) ? `${job.reserved} sandbox credits are reserved. ` : '';
+    return { ...base, title: planning?.status === 'pending' ? 'Waiting for the planner'
+      : (planning?.attempts ?? 0) > 1 ? 'Retrying planning' : 'Planning your request',
+    detail: `${reserved}Your request is saved. Image work has not started; you can cancel and release the budget.` };
+  }
   base.waitingForExport = ['queued', 'running'].includes(job.status) && job.tasks.some(t => t.kind === 'image_finalize' && t.status === 'queued');
   const running = job.tasks.filter(t => t.status === 'running');
   if (running.length) {
