@@ -94,3 +94,41 @@ test('Cancel ends a scan even though the plugin never settles it', async () => {
   assert.equal(await pending, null);
   assert.deepEqual(view.events, ['show', 'hide']);
 });
+
+
+test('loading a secure session removes any stale plaintext copy', async () => {
+  const secure = fakeSecure(), legacy = memory();
+  secure.data.set('pocketgrid.session.v1', JSON.stringify(session));
+  legacy.setItem('pocketgrid.session.v1', JSON.stringify({ ...session, token: 'old' }));
+  assert.deepEqual(await secureSessionStore(secure, legacy).load(), session);
+  assert.equal(legacy.data.size, 0);
+});
+
+test('secure storage failures do not silently migrate or clear the session', async () => {
+  const legacy = memory();
+  legacy.setItem('pocketgrid.session.v1', JSON.stringify(session));
+  const secure = { ...fakeSecure(), set: async () => { throw new Error('save failed'); }, delete: async () => { throw new Error('clear failed'); } };
+  const store = secureSessionStore(secure, legacy);
+  await assert.rejects(store.load(), /save failed/);
+  assert.ok(legacy.getItem('pocketgrid.session.v1'));
+  await assert.rejects(store.clear(), /clear failed/);
+  assert.ok(legacy.getItem('pocketgrid.session.v1'));
+});
+
+
+test('a failed cold-link read releases the warm-link listener', async () => {
+  let stopped = false;
+  await assert.rejects(listenForGridLinks({ onOpenUrl: async () => () => { stopped = true; }, getCurrent: async () => { throw new Error('unavailable'); } }, () => {}, memory()), /unavailable/);
+  assert.equal(stopped, true);
+});
+
+test('aborting a pending camera scan settles it and restores the page', async () => {
+  const api = { ...scanner(), scan: () => new Promise(() => {}) }, view = overlay();
+  const controller = new AbortController();
+  const pending = scanGridLink(api, 'QR_CODE', view, controller.signal);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  controller.abort();
+  assert.equal(await pending, null);
+  assert.ok(api.calls.includes('cancel'));
+  assert.deepEqual(view.events, ['show', 'hide']);
+});

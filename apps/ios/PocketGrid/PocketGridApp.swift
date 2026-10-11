@@ -17,7 +17,6 @@ struct PocketGridApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView().environmentObject(grid)
-                .tint(Color(red: 0.05, green: 0.48, blue: 0.39))
                 .onChange(of: scenePhase) { _, phase in grid.setForeground(phase == .active) }
         }
     }

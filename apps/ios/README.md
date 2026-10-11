@@ -1,21 +1,30 @@
-# PocketGrid for iPhone and iPad
+# GiPU for iPhone and iPad
 
 A native SwiftUI app (iOS 17+) for requesting grid images, managing this phone’s contribution, and seeing receipts/activity.
 
 ## Native design phase
 
-Arboy with Codex owns SwiftUI and Mac UX; the teammate with Claude owns the separate Tauri Android port. SwiftUI keeps native **Create**, **Contribute** and **Activity** tabs, system forms, Dynamic Type and foreground lifecycle behavior. Short status labels and explicit actions lead; options, technical details and receipt breakdowns use disclosure. See [the shared design guide](../../docs/native-ui-design.md).
+Arboy with Codex owns SwiftUI and Mac UX; the teammate with Claude owns the separate Tauri Android port. SwiftUI keeps native **Create**, **Contribute** and **Activity** tabs, system forms, Dynamic Type and foreground lifecycle behavior. **Finish images** starts or pauses this phone. Technical controls live under **Activity → Developer options**, which is off by default and saved locally. Receipt breakdowns remain in the result. See [the shared design guide](../../docs/native-ui-design.md).
 
 Preserve each developer's local signing settings in `PocketGrid.xcodeproj/project.pbxproj`; do not commit personal team or signing changes as project defaults.
 
-## Run
+## Install from source
+
+There is no published iOS download or TestFlight invitation in this repository yet. The supported distribution path is a source build on a Mac with Xcode 26.2 or later and the iOS SDK. The app supports iOS 17+. No separate Swift packages or model download are required for the phone app.
+
+Clone the repository, then open `apps/ios/PocketGrid.xcodeproj`. Its project and scheme remain named **PocketGrid**; the installed app displays **GiPU**. Bundle identifiers and Keychain identifiers are unchanged. The current icon is temporary until the shared brand assets arrive.
+
+For a simulator, choose an installed iPhone simulator and select **Product → Run**. For a physical phone, connect the iPhone, select it as the destination, and choose your own Apple development team under **Signing & Capabilities**. Follow Xcode's device preparation and signing prompts. Preserve these personal signing settings locally. The unsigned command-line build below cannot be installed on a phone.
+
+TestFlight distribution needs an Apple Developer Program team, App Store Connect setup, a signed archive and a published invitation; none is established by a simulator or unsigned-device build.
+
+## Join and use
 
 1. Start the coordinator using the repository README. For a physical phone, bind it to `0.0.0.0:8787` and connect the phone and server to the same trusted Wi-Fi network.
-2. Open `PocketGrid.xcodeproj` in Xcode 26.2 or later. Select the **PocketGrid** scheme.
-3. For a real phone, choose your Apple development team under **Signing & Capabilities**, choose your connected iPhone, and run. A signing team is not needed for simulator builds.
-4. Enter `http://YOUR-MAC-LAN-IP:8787`, a name, and the configured join code (`pocketgrid-demo` for local development). `127.0.0.1` works in the simulator on the coordinator Mac; it points at the phone itself on a physical phone.
-5. Allow Local Network access when iOS asks. Joining does **not** start contribution.
-6. In **Contribute**, set limits and tap **Start contributing**. Keep the app visible. Start a Python generation worker on a laptop and request an image in **Create**.
+2. Launch **GiPU**. Enter a name and the configured join code (`pocketgrid-demo` for local development). Expand **Grid address** for a local server such as `http://YOUR-MAC-LAN-IP:8787`, or use the intended hosted HTTPS grid. `127.0.0.1` works in the simulator on the coordinator Mac; it points at the phone itself on a physical phone. QR sign-in awaits the shared identity contract.
+3. Allow Local Network access when iOS asks. Joining does **not** start contribution.
+4. In **Contribute**, choose **Stop after** and turn on **Finish images**. Turning it off pauses immediately. Keep the app visible. The phone does not offer **Create images** contribution; image generation needs a prepared laptop worker.
+5. Request an image in **Create**. **Activity → Developer options** optionally exposes maximum image size, the fixed CPU-thread count, device telemetry, planner selection and request/device diagnostics. Enable the page explicitly; opening it or turning Developer options on does not start sharing. Pause finishing before changing image limits.
 
 If the network isolates clients (common on event Wi-Fi), use a trusted hotspot or the HTTPS cloud coordinator. This prototype permits HTTP for local development; use an HTTPS coordinator for deployment.
 
@@ -23,13 +32,13 @@ If the network isolates clients (common on event Wi-Fi), use a trusted hotspot o
 
 The phone advertises `image_finalize`, never `image_generate`. It downloads an image produced by a laptop’s model, applies a four-pixel RGB `(36,203,166)` inner frame using local CoreGraphics pixel operations, and uploads the PNG. The coordinator verifies the border and **every interior pixel** before paying the fixed sandbox credit amount. No cloud generation call is made by this app.
 
-- One active image at a time, using one CPU thread. The CPU-thread control is an upper bound, not a system-wide percentage cap.
+- One active image at a time, using one CPU thread. The native phone worker has no adjustable CPU-thread control.
 - Maximum image pixels and timed contribution session are enforced by the coordinator, with a second pixel-limit check in the phone worker.
 - Heartbeats every three seconds; snapshots every two seconds; idle claims every second.
-- **Pause**, leaving the foreground, or losing coordinator contact stops local work. A pause update revokes the lease; lease expiry covers sudden disconnects. Returning to the app requires another explicit **Start**.
+- Turning **Finish images** off, leaving the foreground, or losing coordinator contact stops local work. A pause update revokes the lease; lease expiry covers sudden disconnects. Returning to the app leaves the toggle off and requires another explicit opt-in.
 - Contribution generations reject delayed Start/heartbeat/claim replies from an older session. New starts wait for outstanding Start/Pause updates to settle; a delayed Start after backgrounding is revoked again.
 - Credentials persist in the iOS Keychain. The app never puts bearer tokens in image URLs. Relaunching pauses any old contribution session.
-- **Activity → Enable notifications** requests native notification permission only after a tap. In-app activity always works. Native notifications are generated from newly received work/credit/job events while the app runs; remote push after app closure is not implemented.
+- **Activity → Notifications** requests native notification permission only after a tap. In-app activity always works. Native notifications are generated from newly received work/credit/job events while the app runs; remote push after app closure is not implemented.
 - Grid inputs are visible to participating workers. Use public demo prompts and images. Credits are sandbox units with no cash value.
 
 ## Build and verification
@@ -43,6 +52,16 @@ xcodebuild -project PocketGrid.xcodeproj -scheme PocketGrid \
   -derivedDataPath .build/DerivedData \
   CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache" \
   SWIFT_MODULE_CACHE_PATH="$PWD/.build/SwiftModuleCache" \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+An unsigned device compilation checks the physical-iOS target without installing it:
+
+```sh
+xcodebuild -project PocketGrid.xcodeproj -scheme PocketGrid \
+  -configuration Debug -sdk iphoneos \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath .build/DeviceDerivedData \
   CODE_SIGNING_ALLOWED=NO build
 ```
 
@@ -84,6 +103,13 @@ xcrun swiftc -module-cache-path .build/MacModuleCache \
   PocketGrid/Models.swift Tests/NotificationOwnership.swift -o .build/notification-ownership
 .build/notification-ownership
 ```
+
+V1 controls verification on October 11, 2026:
+
+- Simulator arm64/x86_64 and unsigned physical-iOS arm64 builds passed with Xcode 26.2. The property list and Git whitespace checks passed.
+- Swift JobStatus, LifecycleRace and all 17 NotificationOwnership checks passed. These cover existing durable request/credit behavior, start/pause reply fencing and notification recipients.
+- White action labels on `#C34400` have a calculated opaque sRGB contrast of 5.06:1.
+- This pass did not install on a physical phone, publish a TestFlight build or exercise the new toggle/Developer options screen in the simulator. Those controls still need rendered interaction checks, including persisted preferences, background/foreground and accessibility.
 
 Design-phase verification:
 

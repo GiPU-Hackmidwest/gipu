@@ -41,29 +41,28 @@ cp .env.example .env
 
 Open **http://127.0.0.1:8787** and join with the code in `.env` (`pocketgrid-demo` locally). You get 100 sandbox credits. Sharing stays off until you turn it on.
 
-To make this computer generate images, open a second terminal:
+To make this computer generate images, open a second terminal in the repository root. Replace `YOUR-CODE` with `POCKETGRID_JOIN_CODE` from `.env` (`pocketgrid-demo` for the local default):
 
 ```bash
 ./scripts/setup-worker.sh
-workers/python/.venv/bin/python workers/python/worker.py run --device-name "My laptop" --share
+workers/python/.venv/bin/python workers/python/worker.py run --join-code YOUR-CODE --device-name "My laptop" --share
 ```
 
-`setup-worker.sh` installs PyTorch and downloads the pinned [Tiny-SD](https://huggingface.co/segmind/tiny-sd) model once. `--share` is the explicit opt-in; leave it out to connect paused. Without `--generate-only` this worker also finishes images, so one computer can complete a whole request.
+`setup-worker.sh` installs PyTorch and downloads the pinned [Tiny-SD](https://huggingface.co/segmind/tiny-sd) model once. `--share` is the explicit opt-in; use `--connect-paused` instead to connect with sharing off, including for an existing worker identity. The worker does not load the coordinator’s `.env`; pass its join code explicitly. Without `--generate-only` this worker also finishes images, so one computer can complete a whole request.
 
 Back in the browser, go to **Create**, describe an image and press **Create**. 256 px and 12 steps is the quick test.
 
-The worker joins as its own account. To run it under your browser account instead, copy the worker pairing token from the app and set `POCKETGRID_SESSION_TOKEN` before the worker's first run. Treat that token like a password.
+The worker joins as its own account. To run it under your browser account instead, enable **Developer options** and copy the worker pairing token there, then set `POCKETGRID_SESSION_TOKEN` before the worker's first run. Treat that token like a password.
 
 For frontend work with hot reload, run `npm --prefix apps/web run dev` and open http://localhost:5173. It proxies `/api` to the coordinator.
 
 ## 2. Mac app
 
 ```bash
-cd apps/web
-npm run tauri dev
+npm --prefix apps/web run tauri dev
 ```
 
-On the join screen, enter `http://127.0.0.1:8787` for your local grid. **Contribute** can connect the worker you prepared with `setup-worker.sh`; it starts paused until you turn sharing on.
+Run these commands from the repository root. On the join screen, enter `http://127.0.0.1:8787` for your local grid. For development, enable **Developer options** and point the Mac worker at the checkout prepared with `setup-worker.sh`. Turn **Create images** on in **Contribute** to connect and start sharing.
 
 To build a standalone app with the image worker inside it:
 
@@ -71,7 +70,7 @@ To build a standalone app with the image worker inside it:
 npm --prefix apps/web run build:desktop
 ```
 
-The app appears in `apps/web/src-tauri/target/release/bundle/macos/`. It downloads the model (about 1 GB) from **Contribute** the first time. The build is unsigned: on first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**. More detail: [apps/web/README.md](apps/web/README.md).
+The app appears in `apps/web/src-tauri/target/release/bundle/macos/`. The standalone app asks before downloading its own model (about 1 GB) the first time you turn **Create images** on. After the download, turn the switch on to start. Its model cache is separate from the development checkout; a standalone user does not need `setup-worker.sh`. The build is unsigned: on first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**. More detail: [apps/web/README.md](apps/web/README.md).
 
 ## 3. Android app
 
@@ -86,16 +85,14 @@ export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
 Run on a connected device or a running emulator:
 
 ```bash
-cd apps/web
-npm run tauri android dev
+npm --prefix apps/web run tauri android dev
 ```
 
 Or build an installable debug APK and install it:
 
 ```bash
-cd apps/web
-npm run tauri android build -- --debug --target aarch64 --apk
-adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+npm --prefix apps/web run tauri android build -- --debug --target aarch64 --apk
+adb install -r apps/web/src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
 
 On the join screen use `http://10.0.2.2:8787` from the emulator, or your computer's network address from a phone (see section 5). Debug builds allow plain `http://`; release builds require an `https://` grid. Android finishes images only, and only while the app is open.
@@ -135,10 +132,15 @@ On a Linux VM with Docker, from a copy of the repository:
 
 ```bash
 cp deploy/.env.example deploy/.env
+```
+
+Set your domain and a private join code in `deploy/.env`, then start the grid:
+
+```bash
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 ```
 
-Set your domain and a private join code in `deploy/.env` first. Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
+Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
 
 ## 7. Optional: AI planner
 

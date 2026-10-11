@@ -94,7 +94,10 @@ class SecureStoragePlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun deleteSecret(invoke: Invoke) {
         val args = invoke.parseArgs(SecretKeyArgs::class.java)
-        prefs.edit().remove(args.key).commit()
+        if (!prefs.edit().remove(args.key).commit()) {
+            invoke.reject("Secure storage could not clear")
+            return
+        }
         invoke.resolve()
     }
 

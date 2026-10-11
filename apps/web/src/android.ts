@@ -36,7 +36,7 @@ export function secureSessionStore(secure: SecureStorage, legacy: LegacyStorage,
   return {
     async load() {
       const stored = parse(await secure.get(key));
-      if (stored) return stored;
+      if (stored) { legacy.removeItem(key); return stored; }
       const earlier = await webSessionStore(legacy, key).load();
       if (!earlier) return null;
       await secure.set(key, JSON.stringify(earlier));
@@ -74,7 +74,7 @@ export async function listenForGridLinks(api: DeepLinkApi, onLink: (link: GridLi
     }
   };
   const stop = await api.onOpenUrl(deliver);
-  deliver(await api.getCurrent());
+  try { deliver(await api.getCurrent()); } catch (error) { stop(); throw error; }
   return stop;
 }
 
@@ -90,15 +90,19 @@ export class CameraPermissionError extends Error {
 }
 
 /** Resolves the scanned grid link, null when cancelled, or throws for a non-GiPU code. */
-export async function scanGridLink<Format>(api: ScannerApi<Format>, qrFormat: Format, overlay: ScanOverlay): Promise<GridLink | null> {
+export async function scanGridLink<Format>(api: ScannerApi<Format>, qrFormat: Format, overlay: ScanOverlay, signal?: AbortSignal): Promise<GridLink | null> {
+  if (signal?.aborted) return null;
   let permission = await api.checkPermissions();
   if (permission !== 'granted') permission = await api.requestPermissions();
+  if (signal?.aborted) return null;
   if (permission !== 'granted') throw new CameraPermissionError();
   // The plugin's cancel() stops the camera but never settles the pending scan
   // (tauri-plugin-barcode-scanner 2.5.2 clears it before rejecting), so Cancel settles it here.
   let stop = () => {};
   const cancelled = new Promise<null>(resolve => { stop = () => resolve(null); });
-  overlay.show(() => { stop(); void api.cancel(); });
+  const cancel = () => { stop(); void api.cancel().catch(() => {}); };
+  signal?.addEventListener('abort', cancel, { once: true });
+  overlay.show(cancel);
   try {
     const result = await Promise.race([api.scan({ windowed: true, formats: [qrFormat] }), cancelled]);
     if (!result) return null;
@@ -109,6 +113,7 @@ export async function scanGridLink<Format>(api: ScannerApi<Format>, qrFormat: Fo
     if (String(error).includes('cancel')) return null;
     throw error;
   } finally {
+    signal?.removeEventListener('abort', cancel);
     overlay.hide();
   }
 }
@@ -162,7 +167,7 @@ export async function androidAdapters() {
     secure,
     sessionStore: secureSessionStore(secure, localStorage),
     listenForGridLinks: (onLink: (link: GridLink) => void) => listenForGridLinks(deepLink, onLink, sessionStorage),
-    scanGridLink: () => scanGridLink(scanner, scanner.Format.QRCode, domScanOverlay()),
+    scanGridLink: (signal?: AbortSignal) => scanGridLink(scanner, scanner.Format.QRCode, domScanOverlay(), signal),
     openCameraSettings: () => scanner.openAppSettings(),
   };
 }

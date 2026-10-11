@@ -109,3 +109,41 @@ def test_tokens_issued_before_multi_device_sign_in_keep_working(tmp_path):
     migrated = Store(tmp_path)
     assert migrated.auth('old-token')['id'] == user
     assert Store(tmp_path).auth('old-token')['id'] == user  # Migration is idempotent.
+
+
+def test_legacy_migration_preserves_reservation_and_revocation_across_restart(tmp_path):
+    store = Store(tmp_path)
+    original = store.session('Earlier')
+    user = original['user']['id']
+    job = store.create_job(user, request(), {'mode': 'manual'})
+    with sqlite3.connect(store.path) as db:
+        db.execute('DELETE FROM user_sessions')
+        db.execute('UPDATE users SET token=? WHERE id=?', (digest('old-token'), user))
+    migrated = Store(tmp_path)
+    session = migrated.auth('old-token')
+    before = migrated.snapshot(user)
+    assert before['balance'] == 90 and before['reserved'] == 10
+    assert before['jobs'][0]['id'] == job['id'] and before['jobs'][0]['owner_id'] == user
+    code = migrated.create_link_code(user)['code']
+    linked = migrated.redeem_link_code(code, 'Phone')
+    assert linked['user'] == original['user'] and linked['balance'] == 90
+    migrated.revoke_session(user, session['session_id'])
+    restarted = Store(tmp_path)
+    with pytest.raises(Exception) as revoked:
+        restarted.auth('old-token')
+    assert revoked.value.status_code == 401
+    assert restarted.auth(linked['token'])['id'] == user
+    assert restarted.snapshot(user)['ledger'] == before['ledger']
+    restarted.cancel(user, job['id'])
+    after = restarted.snapshot(user)
+    assert after['balance'] == 100 and after['reserved'] == 0
+    assert sum(e['amount'] for e in after['ledger'] if e['kind'] == 'demo_grant') == 100
+    assert after['jobs'][0]['receipt']['refund'] == 10
+
+
+def test_session_revocation_is_scoped_to_the_owner(client):
+    first = client.post('/api/sessions', json={'join_code': JOIN}).json()
+    second = client.post('/api/sessions', json={'join_code': JOIN}).json()
+    assert client.delete(f'/api/sessions/{second["session_id"]}', headers=bearer(first)).status_code == 404
+    assert client.get('/api/state', headers=bearer(second)).status_code == 200
+    assert [s['id'] for s in client.get('/api/sessions', headers=bearer(first)).json()['sessions']] == [first['session_id']]

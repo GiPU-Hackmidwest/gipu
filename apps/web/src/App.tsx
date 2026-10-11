@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
+import { createPortal } from 'react-dom';
+import { ContributionToggle } from './ContributionToggle';
 import { Api, askNotifications, copyText, errorMessage, isDesktop, isMacDesktop, isMobileApp, notify } from './api';
 import { BrowserWorker } from './browserWorker';
 import { GridScene } from './GridScene';
@@ -11,6 +13,8 @@ import { initialJobSync, mergeJobResponses, reconcileSnapshot, retainJobResponse
 import type { Device, DeviceCredential, Job, Limits, Session, Snapshot } from './types';
 
 const sessionKey = 'pocketgrid.session.v1';
+const developerKey = 'pocketgrid.developer-options';
+function storedDeveloperOptions() { try { return localStorage.getItem(developerKey) === 'true'; } catch { return false; } }
 const defaultLimits: Limits = { cpu_threads: 2, max_pixels: 262144, session_minutes: 30 };
 function storedSession(): Session | null { try { return JSON.parse(localStorage.getItem(sessionKey) || 'null'); } catch { return null; } }
 function displayTime(value: number) { return new Date(value * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
@@ -37,14 +41,29 @@ function SignIn({ onSession }: { onSession: (session: Session) => void }) {
       onSession({ token: result.token, name: result.user.name, server: normalized });
     } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
   }
-  return <main className="onboarding"><div className="brand">◉ PocketGrid <span>Device-powered images</span></div><h1><em>Welcome to</em><br />PocketGrid.</h1><p>Make something together.</p><form onSubmit={submit} className="panel stack"><h2>Join your grid</h2><label>Your name<input value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Alex" maxLength={60} required /></label><label>Grid invite code<input type="password" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={code} onChange={e => setCode(e.target.value)} required /></label><details open={isMobileApp}><summary>Grid address</summary><label>Address<input value={server} onChange={e => setServer(e.target.value)} placeholder={isMobileApp ? "https://your-grid" : "Same server as this page"} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} required={isMobileApp} /><small>{isMobileApp ? 'Use your grid’s https:// address.' : isDesktop ? 'Use the same grid on all your devices.' : 'Leave blank to use this page’s grid.'}</small></label></details>{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !name.trim()}>{busy ? 'Joining…' : 'Join grid'}</button><small>Sharing stays off until you start. Sandbox credits only.</small></form></main>;
+  return <main className="onboarding"><div className="brand">◉ GiPU</div><h1><em>Welcome to</em><br />GiPU.</h1><p>Make something together.</p><form onSubmit={submit} className="panel stack"><h2>Join your grid</h2><label>Your name<input value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Alex" maxLength={60} required /></label><label>Grid invite code<input type="password" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={code} onChange={e => setCode(e.target.value)} required /></label><details open={isMobileApp}><summary>Grid address</summary><label>Address<input value={server} onChange={e => setServer(e.target.value)} placeholder={isMobileApp ? "https://your-grid" : "Same server as this page"} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} required={isMobileApp} /><small>{isMobileApp ? 'Use your grid’s https:// address.' : isDesktop ? 'Use the same grid on all your devices.' : 'Leave blank to use this page’s grid.'}</small></label></details>{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !name.trim()}>{busy ? 'Joining…' : 'Join grid'}</button><small>Sharing stays off until you start. Sandbox credits only.</small></form></main>;
 }
 
 function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
   const api = useMemo(() => new Api(session.server, session.token), [session.server, session.token]);
   const [state, setState] = useState<Snapshot | null>(null);
-  const [section, setSection] = useState<'create' | 'contribute' | 'activity'>('create');
+  const [section, setSection] = useState<'create' | 'contribute' | 'activity' | 'developer'>('create');
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [section]);
+  const [developerEnabled, setDeveloperEnabled] = useState(storedDeveloperOptions);
+  const [developerTarget, setDeveloperTarget] = useState<HTMLDivElement | null>(null);
+  const [requestTarget, setRequestTarget] = useState<HTMLDivElement | null>(null);
+  function changeDeveloperOptions(enabled: boolean) {
+    setDeveloperEnabled(enabled);
+    try { localStorage.setItem(developerKey, String(enabled)); } catch { /* Usable for this session without storage. */ }
+  }
+  useEffect(() => {
+    const settingsShortcut = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === ',') { event.preventDefault(); setSection('developer'); }
+    };
+    window.addEventListener('keydown', settingsShortcut);
+    return () => window.removeEventListener('keydown', settingsShortcut);
+  }, []);
+  const localActionPending = useRef(false);
   const jobSync = useRef(initialJobSync());
   const refreshSequence = useRef(0);
   const [error, setError] = useState('');
@@ -127,8 +146,10 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   }
   async function action(label: string, work: () => Promise<void>) { setBusy(label); setError(''); try { await work(); await refresh(); } catch (error) { setError(errorMessage(error)); } finally { setBusy(''); } }
   async function startLocal() {
+    if (localActionPending.current) return;
+    localActionPending.current = true;
     const epoch = ++contributionEpoch.current;
-    await action('share', async () => {
+    try { await action('share', async () => {
       if (document.hidden) throw new Error('Bring this window to the foreground first.');
       if (!credential.current) {
         const result = await api.request<{ device: Device; token: string }>('/devices', { name: deviceName.trim() || 'Browser worker', kind: 'browser', capabilities: ['image_finalize'], limits });
@@ -143,37 +164,60 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
       }
       worker.current?.stop();
       worker.current = new BrowserWorker(api, credential.current, setWorkerMessage); worker.current.start();
-    });
+    }); } finally { localActionPending.current = false; }
   }
   async function pauseLocal() { contributionEpoch.current += 1; await action('share', async () => { worker.current?.stop(); if (credential.current) await api.request(`/devices/${credential.current.id}`, { enabled: false }, 'PATCH'); setWorkerMessage('Sharing paused. Unfinished work can move to another device.'); }); }
   const localDevice = state?.devices.find(device => device.id === localId);
   const localSharing = isSharing(localDevice, state?.server_time ?? NaN);
+  const titles = { create: 'Create', contribute: 'Contribute', activity: 'Activity', developer: 'Developer options' };
   return <div className="shell">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true">▦</span> PocketGrid</div>
-
-      <nav aria-label="Main navigation">{(['create', 'contribute', 'activity'] as const).map((item, index) => <button key={item} className={section === item ? 'nav-item selected' : 'nav-item'} aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}><span aria-hidden="true">{['✧', '◉', '↗'][index]}</span>{item[0].toUpperCase() + item.slice(1)}</button>)}</nav>
-      <div className="grid-identity"><span className="eyebrow">Your grid</span><strong>{session.name}</strong><small>{session.server ? new URL(session.server).host : location.host}</small><span className="connection-state">{error ? 'Updates interrupted' : state ? 'Connected to grid' : 'Connecting…'}</span><button className="subtle" onClick={onSignOut}>Leave grid</button></div>
-      <small>Sandbox credits<br />No cash value</small>
+      <div className="brand"><span className="brand-mark" aria-hidden="true">▦</span> GiPU</div>
+      <nav aria-label="Main navigation">{(['create', 'contribute', 'activity'] as const).map(item => <button key={item} className={section === item ? 'nav-item selected' : 'nav-item'} aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}><NavIcon name={item} />{titles[item]}</button>)}</nav>
+      <button className={`nav-item developer-link ${section === 'developer' ? 'selected' : ''}`} aria-current={section === 'developer' ? 'page' : undefined} onClick={() => setSection('developer')}><NavIcon name="developer" />Developer options</button>
+      <div className="grid-identity"><span className="account-avatar" aria-hidden="true">{session.name.slice(0, 1).toUpperCase()}</span><div><strong>{session.name}</strong><span className="connection-state">{error ? 'Updates interrupted' : state ? 'Connected' : 'Connecting…'}</span></div><button className="subtle" onClick={onSignOut}>Leave grid</button></div>
+      <small>Sandbox credits · no cash value</small>
     </aside>
     <main className="workspace">
-    <header><span>{section === 'create' ? 'Create' : section === 'contribute' ? 'Contribute' : 'Activity'}</span><span className="badge">{state ? `${state.devices.filter(d => d.online).length} devices online` : 'Checking devices…'}</span></header>
-    <div className="intro"><div><h1>{section === 'create' ? <><em>Let’s make</em><br />an image.</> : section === 'contribute' ? <><em>Share your</em><br />devices.</> : <><em>Your</em><br />activity.</>}</h1></div><div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div><small>Sandbox credits · no cash value</small></div></div>
-    {error && <div className="error banner" role="alert">{error}</div>}
-    <div hidden={section !== 'create'}><div className="create-layout"><section className="panel compose-panel"><CreateJob api={api} state={state} onCreated={onJobResponse} /></section><GridScene state={state} onOpen={() => setSection('contribute')} /></div></div>
-    <div hidden={section !== 'contribute'}><section className="panel">{isMacDesktop && <DesktopWorkerPanel session={session} api={api} devices={state?.devices ?? []} now={state?.server_time ?? NaN} onDeviceIdChange={setManagedId} />}<div className="section-title"><h2>{isMacDesktop ? 'Finish images in this window' : 'Share this device'}</h2><span className="badge">Foreground only</span></div><div className="stack"><div className="section-title"><h3>Image finishing</h3><span className={`badge ${localSharing ? 'good' : ''}`}>{deviceStatus(localDevice, state?.server_time ?? NaN)}</span></div><p>Help finish images. Keep this window open.</p><label>Device name<input value={deviceName} disabled={!!localId} onChange={e => setDeviceName(e.target.value)} maxLength={80} /></label><LimitsForm value={limits} onChange={setLimits} /><div className="button-row"><button disabled={!!busy} onClick={() => void startLocal()}>{localSharing ? 'Apply limits / restart' : 'Start sharing'}</button><button className="secondary" disabled={!!busy || !localDevice?.enabled} onClick={() => void pauseLocal()}>Pause now</button></div><p className="worker-status" role="status">{workerMessage}</p><details><summary>How sharing works</summary><p>This window adds the verified four-pixel frame. Hiding or closing it pauses sharing. Image size and session limits apply; these are not CPU, GPU, or memory caps.</p></details></div></section>
-    <section className="panel"><div className="section-title"><h2>Devices in the grid</h2><span>{state?.devices.filter(device => device.online).length ?? 0} online</span></div><div className="device-grid">{state?.devices.length ? state.devices.map(device => <DeviceCard key={device.id} device={device} now={state.server_time} own={device.owner_id === state.user.id && device.id !== managedId} local={device.id === localId} busy={!!busy} onUpdate={patch => action(device.id, async () => { if (device.id === localId) { if (patch.enabled === false) { contributionEpoch.current += 1; worker.current?.stop(); setWorkerMessage('Sharing paused.'); } if (patch.enabled === true) { await startLocal(); return; } } await api.request(`/devices/${device.id}`, patch, 'PATCH'); })} />) : <p className="empty">No devices yet. Start sharing here or connect a Python generation worker.</p>}</div><details className="setup"><summary>Advanced · manual worker pairing</summary><p>Run the Python worker from this repository on a laptop with the local model installed. Copy your pairing token below and set <code>POCKETGRID_SESSION_TOKEN</code> when launching the worker to make that laptop controllable from this session. A matching display name alone does not link accounts. See <code>workers/python/README.md</code> for model installation; wait for the model-ready message before your demo.</p><button className="secondary" onClick={() => { void action('pairing', async () => { await copyText(session.token); setPairingCopied(true); }); }}>{pairingCopied ? 'Pairing token copied' : 'Copy worker pairing token'}</button><small>This token grants access to your demo account. Paste it only into your own worker terminal; never share it in a prompt or screenshot.</small><p>Image generation runs on that laptop’s CPU or supported GPU. The packaged Mac app includes its worker; download the model once before connecting. Development builds use a prepared worker folder. Other devices perform image exports.</p><p>Coordinator: <code>{session.server || location.origin}</code></p></details></section></div>
-    <section hidden={section !== 'create'} className="panel"><div className="section-title"><h2>Your requests & results</h2><span>Shared with grid members</span></div><div className="jobs">{state?.jobs.some(job => job.owner_id === state.user.id) ? state.jobs.filter(job => job.owner_id === state.user.id).map(job => <JobCard key={job.id} api={api} job={job} own={job.owner_id === state.user.id} devices={state.devices} now={state.server_time} canStartExport={!localSharing && limits.max_pixels >= job.width * job.height} onStartExport={startLocal} busy={!!busy} onCancel={() => cancelJob(job.id)} />) : <p className="empty">Describe an image to start. Jobs wait safely until a capable device is sharing.</p>}</div></section>
-    <div hidden={section !== 'activity'}><section className="panel section-title"><div><h2>Stay in the loop</h2><p>Activity is always available here.</p></div><button className="secondary" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears here.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button></section><div className="main-grid"><section className="panel"><h2>Live activity</h2><div className="events" aria-live="polite">{state?.events.length ? state.events.slice(0, 30).map(event => <div className="event" key={event.id}><time>{displayTime(event.created_at)}</time><span>{event.message}</span></div>) : <p className="empty">Task starts, reassignments, and earned credits appear here.</p>}</div></section><section className="panel"><h2>My credit ledger</h2><div className="events">{state?.ledger.length ? state.ledger.slice(0, 30).map(row => <div className="ledger-row" key={row.id}><div><span>{row.note || row.kind.replaceAll('_', ' ')}</span><small>{displayTime(row.created_at)}</small></div><strong className={row.amount > 0 ? 'positive' : ''}>{row.amount > 0 ? '+' : ''}{row.amount}</strong></div>) : <p className="empty">Budget reservations, accepted work, and refunds appear here.</p>}</div></section></div></div>
-    <footer><details><summary>About this grid</summary><p>Invite-only demo. Grid members can see prompts and images. Credits have no cash value. Laptops generate images locally; phones and browsers add a verified four-pixel frame. Generated images are checked for format, not accuracy.</p></details></footer>
-  </main></div>;
+      <header><span>YOUR WORKSPACE</span><span className="badge">{state ? `${state.devices.filter(d => d.online).length} connected` : 'Connecting…'}</span></header>
+      <div className="intro"><h1>{titles[section]}</h1>{section !== 'developer' && <div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div></div>}</div>
+      {error && <div className="error banner" role="alert">{error}</div>}
+      <div hidden={section !== 'create'}><div className="create-layout"><section className="panel compose-panel"><CreateJob api={api} state={state} onCreated={onJobResponse} developerTarget={requestTarget} /></section><GridScene state={state} onOpen={() => setSection('contribute')} /></div></div>
+      <div hidden={section !== 'contribute'}>
+        <div className={`contribution-layout ${isMacDesktop ? 'with-generation' : ''}`}>
+          {isMacDesktop && <section className="panel contribution-card"><div className="contribution-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="16" rx="3"/><path d="M2 25h28M12 12h8M16 8v8"/></svg></span></div><DesktopWorkerPanel session={session} api={api} devices={state?.devices ?? []} now={state?.server_time ?? NaN} onDeviceIdChange={setManagedId} developerTarget={developerTarget} /></section>}
+          <section className="panel contribution-card finish-card">
+            <div className="contribution-art finishing-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="6" y="3" width="20" height="26" rx="4"/><path d="m11 16 4 4 7-8"/></svg></span></div>
+            <ContributionToggle label="Finish images" status={deviceStatus(localDevice, state?.server_time ?? NaN)} checked={!!localDevice && canPauseDevice(localDevice, state?.server_time ?? NaN)} busy={busy === 'share'} disabled={!!busy || !state} onChange={enabled => { void (enabled ? startLocal() : pauseLocal()); }} />
+            <p>Keep this {isMobileApp ? 'app' : 'window'} open while sharing.</p>
+            {localSharing && localDevice?.session_expires_at && <small>Until {displayTime(localDevice.session_expires_at)}</small>}
+          </section>
+        </div>
+        <div className="contribute-note"><span className="status-pin" aria-hidden="true" /><p>You choose when to share. Switch off to pause.</p></div>
+      </div>
+      <section hidden={section !== 'create'} className="panel"><div className="section-title"><h2>Your images</h2><span>Shared with grid members</span></div><div className="jobs">{state?.jobs.some(job => job.owner_id === state.user.id) ? state.jobs.filter(job => job.owner_id === state.user.id).map(job => <JobCard key={job.id} api={api} job={job} own={true} devices={state.devices} now={state.server_time} canStartExport={!localSharing && limits.max_pixels >= job.width * job.height} onStartExport={startLocal} busy={!!busy} onCancel={() => cancelJob(job.id)} />) : <p className="empty">Your next image starts with a prompt.</p>}</div></section>
+      <div hidden={section !== 'activity'}><section className="panel section-title"><div><h2>Notifications</h2><p>Know when your image is ready.</p></div><button className="secondary" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears here.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button></section><div className="main-grid"><section className="panel"><h2>Recent activity</h2><div className="events" aria-live="polite">{state?.events.length ? state.events.slice(0, 30).map(event => <div className="event" key={event.id}><time>{displayTime(event.created_at)}</time><span>{event.message}</span></div>) : <p className="empty">Your activity will appear here.</p>}</div></section><section className="panel"><h2>Your credits</h2><div className="events">{state?.ledger.length ? state.ledger.slice(0, 30).map(row => <div className="ledger-row" key={row.id}><div><span>{row.note || row.kind.replaceAll('_', ' ')}</span><small>{displayTime(row.created_at)}</small></div><strong className={row.amount > 0 ? 'positive' : ''}>{row.amount > 0 ? '+' : ''}{row.amount}</strong></div>) : <p className="empty">Payments and refunds will appear here.</p>}</div></section></div></div>
+      <div hidden={section !== 'developer'} className="developer-page">
+        <section className="panel stack"><ContributionToggle label="Developer options" status={developerEnabled ? 'On for this device' : 'Off'} checked={developerEnabled} onChange={changeDeveloperOptions} /><p>Advanced controls and diagnostics. Sharing stays unchanged.</p></section>
+        {developerEnabled && <div className="developer-content">
+          <div ref={setDeveloperTarget} />
+          <section className="panel stack"><h2>Image finishing</h2><label>Device name<input value={deviceName} disabled={!!localId} onChange={e => setDeviceName(e.target.value)} maxLength={80} /></label><LimitsForm value={limits} onChange={setLimits} /><small>Changes apply the next time you turn Finish images on.</small><p className="worker-status" role="status">{workerMessage}</p></section>
+          <div ref={setRequestTarget} />
+          <section className="panel stack"><h2>Device details</h2><div className="device-grid">{state?.devices.map(device => <DeviceCard key={device.id} device={device} now={state.server_time} own={device.owner_id === state.user.id && device.id !== managedId && device.id !== localId} local={device.id === localId} busy={!!busy} onUpdate={patch => action(device.id, async () => { await api.request(`/devices/${device.id}`, patch, 'PATCH'); })} />)}</div></section>
+          <section className="panel stack"><h2>Request details</h2>{state?.jobs.filter(job => job.owner_id === state.user.id).map(job => <JobDiagnostics key={job.id} job={job} devices={state.devices} />)}</section>
+          <section className="panel stack"><h2>Manual worker pairing</h2><p>Use this token only in your own worker terminal.</p><button className="secondary" disabled={!!busy} onClick={() => { void action('pairing', async () => { await copyText(session.token); setPairingCopied(true); }); }}>{pairingCopied ? 'Pairing token copied' : 'Copy worker pairing token'}</button><small>Set POCKETGRID_SESSION_TOKEN when starting a prepared worker. Never share the token.</small><p>Grid address: <code>{session.server || location.origin}</code></p></section>
+        </div>}
+      </div>
+    </main>
+  </div>;
+
 }
 
 function LimitsForm({ value, onChange, cpu = false }: { value: Limits; onChange: (limits: Limits) => void; cpu?: boolean }) {
   return <div className="limits">{cpu && <label>CPU threads<input type="number" min="1" max="8" value={value.cpu_threads} onChange={e => onChange({ ...value, cpu_threads: Number(e.target.value) })} /></label>}<label>Largest image<select value={value.max_pixels} onChange={e => onChange({ ...value, max_pixels: Number(e.target.value) })}><option value={65536}>256 × 256</option><option value={147456}>384 × 384</option><option value={262144}>512 × 512</option></select></label><label>Share for<select value={value.session_minutes} onChange={e => onChange({ ...value, session_minutes: Number(e.target.value) })}><option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes</option><option value={60}>60 minutes</option></select></label></div>;
 }
 
-function CreateJob({ api, state, onCreated }: { api: Api; state: Snapshot | null; onCreated: (job: Job) => void }) {
+function CreateJob({ api, state, onCreated, developerTarget }: { api: Api; state: Snapshot | null; onCreated: (job: Job) => void; developerTarget: HTMLElement | null }) {
   const [prompt, setPrompt] = useState('A cat riding a tiny bicycle, playful illustration');
   const [count, setCount] = useState(1); const [size, setSize] = useState(256); const [steps, setSteps] = useState(12); const [budget, setBudget] = useState(10); const [agent, setAgent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const minimum = count * ((state?.pricing.generate ?? 6) + (state?.pricing.finalize ?? 1)) + (state?.pricing.fee ?? 1);
@@ -195,7 +239,7 @@ function CreateJob({ api, state, onCreated }: { api: Api; state: Snapshot | null
     pendingRequest.current = null; setAccepted(job);
     onCreated(job);
   }
-  return <form className="stack" onSubmit={submit}><h2>Your prompt</h2><label>Describe your image<textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3} maxLength={1000} required /></label><small>{minimum} credits estimated · {state?.balance ?? '—'} available</small><details><summary>Options</summary><div className="stack"><div className="limits"><label>Images<select value={count} onChange={e => { const next = Number(e.target.value); setCount(next); setBudget(Math.max(budget, next * ((state?.pricing.generate ?? 6) + (state?.pricing.finalize ?? 1)) + (state?.pricing.fee ?? 1))); }}>{[1, 2, 3, 4].map(value => <option key={value}>{value}</option>)}</select></label><label>Size<select value={size} onChange={e => setSize(Number(e.target.value))}>{[256, 384, 512].map(value => <option key={value} value={value}>{value} × {value}</option>)}</select></label></div><label>Maximum budget <span className="muted">(sandbox credits)</span><input type="number" min={minimum} max={state?.balance ?? 100} value={budget} onChange={e => setBudget(Number(e.target.value))} required /></label><label>Model steps<input type="number" min="4" max="30" value={steps} onChange={e => setSteps(Number(e.target.value))} required /></label><small>{count * (state?.pricing.generate ?? 6)} generation + {count * (state?.pricing.finalize ?? 1)} finishing + {state?.pricing.fee ?? 1} service fee.</small><label className="check"><input type="checkbox" checked={agent} onChange={e => setAgent(e.target.checked)} disabled={!state?.agent.available} />Let the planner choose devices{!state?.agent.available && <span className="muted"> (not configured)</span>}</label><small>{agent ? 'AWS Strands plans with the configured chat model. A laptop still generates your image.' : 'Direct queue · available compatible devices accept the work.'}</small></div></details>{acceptedJob && <p className="worker-status" role="status">{jobAcknowledgement(acceptedJob)}</p>}{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !state || !prompt.trim() || budget < minimum || budget > (state?.balance ?? 0)}>{busy ? 'Submitting request…' : 'Create image'}</button><small>Reserves {budget} credits. Unused credits return.</small></form>;
+  return <form className="stack" onSubmit={submit}><h2>Your prompt</h2><label>Describe your image<textarea value={prompt} onChange={e => setPrompt(e.target.value)} rows={3} maxLength={1000} required /></label><small>{minimum} credits estimated · {state?.balance ?? '—'} available</small><details><summary>Options</summary><div className="stack"><div className="limits"><label>Images<select value={count} onChange={e => { const next = Number(e.target.value); setCount(next); setBudget(Math.max(budget, next * ((state?.pricing.generate ?? 6) + (state?.pricing.finalize ?? 1)) + (state?.pricing.fee ?? 1))); }}>{[1, 2, 3, 4].map(value => <option key={value}>{value}</option>)}</select></label><label>Size<select value={size} onChange={e => setSize(Number(e.target.value))}>{[256, 384, 512].map(value => <option key={value} value={value}>{value} × {value}</option>)}</select></label></div><label>Maximum budget <span className="muted">(sandbox credits)</span><input type="number" min={minimum} max={state?.balance ?? 100} value={budget} onChange={e => setBudget(Number(e.target.value))} required /></label></div></details>{acceptedJob && <p className="worker-status" role="status">{jobAcknowledgement(acceptedJob)}</p>}{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !state || !prompt.trim() || budget < minimum || budget > (state?.balance ?? 0)}>{busy ? 'Submitting request…' : 'Create image'}</button><small>Reserves {budget} credits. Unused credits return.</small>{developerTarget && createPortal(<section className="panel stack"><h2>Request settings</h2><label>Model steps<input type="number" min="4" max="30" value={steps} onChange={e => setSteps(Math.max(4, Math.min(30, Number(e.target.value) || 4)))} required /></label><small>{count * (state?.pricing.generate ?? 6)} generation + {count * (state?.pricing.finalize ?? 1)} finishing + {state?.pricing.fee ?? 1} service fee.</small><label className="check"><input type="checkbox" checked={agent} onChange={e => setAgent(e.target.checked)} disabled={!state?.agent.available && !agent} />Let the planner choose devices{!state?.agent.available && <span className="muted"> (not configured)</span>}</label><small>{agent ? 'AWS Strands plans with the configured chat model. A laptop still generates your image.' : 'Direct queue · available compatible devices accept the work.'}</small></section>, developerTarget)}</form>;
 }
 
 function DeviceCard({ device, now, own, local, busy, onUpdate }: { device: Device; now: number; own: boolean; local: boolean; busy: boolean; onUpdate: (patch: { enabled?: boolean; limits?: Limits }) => Promise<void> }) {
@@ -214,16 +258,24 @@ function JobCard({ api, job, devices, now, canStartExport, onStartExport, own, b
     <div className="job-progress">
       <strong>{progress.title}</strong>{job.status !== 'completed' && <p>{progress.detail}</p>}
       {job.status !== 'planning' && job.status !== 'completed' && <><progress value={progress.completed} max={progress.total} aria-label="Completed generation and export steps" /><small>{progress.generated}/{job.count} generated · {progress.finalized}/{job.count} exports verified</small></>}
-      {progress.waitingForExport && canStartExport && <><button className="secondary" disabled={busy} onClick={() => void onStartExport()}>Start this window to finish images</button><small>Uses your limits in Contribute. Keep this window visible; pause anytime in Contribute.</small></>}
+      {progress.waitingForExport && canStartExport && <><button className="secondary" disabled={busy} onClick={() => void onStartExport()}>Turn on Finish images</button><small>Keep this window open. Turn off in Contribute to pause.</small></>}
     </div>
 
     {images.length > 0 && <div className="gallery">{images.map(image => <ImageCard key={image.task_id} api={api} path={image.url} title={`Image ${image.variant + 1}`} stage={image.stage} />)}</div>}
-    <details><summary>Plan details</summary><p>{job.plan.explanation}</p></details>
-    <details><summary>Devices & steps</summary><div className="task-list">{job.tasks.map(task => <div key={task.id} className="task"><div><span>{task.kind === 'image_generate' ? 'Generate' : 'Export'} image {task.variant + 1}</span><small>{task.device_id ? devices.find(device => device.id === task.device_id)?.name || 'Assigned device' : task.status === 'queued' ? 'Awaiting assignment' : 'No active assignment'}{task.attempts > 1 ? ` · attempt ${task.attempts}` : ''}</small></div><span className="muted">{task.status === 'running' ? `${Math.round((task.progress || 0) * 100)}%` : task.status}</span></div>)}</div></details>
+
 
     {job.receipt ? <details className="receipt-details"><summary>Receipt · {job.receipt.total_charged} credits</summary><div className="receipt"><span>Reserved {job.receipt.budget}</span><span>Contributors {job.receipt.contributor_total}</span><span>Service fee {job.receipt.platform_fee}</span><span>Refund {job.receipt.refund}</span><strong>Charged {job.receipt.total_charged}</strong></div></details> : <p className="muted">Budget {job.budget} · still reserved {job.reserved} · accepted work paid {job.spent} · returned {job.refunded}</p>}
     {own && canCancelJob(job) && <button className="secondary" disabled={busy} onClick={() => void onCancel()}>Cancel request</button>}
   </article>;
+}
+
+function JobDiagnostics({ job, devices }: { job: Job; devices: Device[] }) {
+  return <article className="job"><h3>{job.prompt}</h3>    <details><summary>Plan details</summary><p>{job.plan.explanation}</p></details>
+    <details><summary>Devices & steps</summary><div className="task-list">{job.tasks.map(task => <div key={task.id} className="task"><div><span>{task.kind === 'image_generate' ? 'Generate' : 'Export'} image {task.variant + 1}</span><small>{task.device_id ? devices.find(device => device.id === task.device_id)?.name || 'Assigned device' : task.status === 'queued' ? 'Awaiting assignment' : 'No active assignment'}{task.attempts > 1 ? ` · attempt ${task.attempts}` : ''}</small></div><span className="muted">{task.status === 'running' ? `${Math.round((task.progress || 0) * 100)}%` : task.status}</span></div>)}</div></details></article>;
+}
+
+function NavIcon({ name }: { name: 'create' | 'contribute' | 'activity' | 'developer' }) {
+  return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{name === 'create' ? <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></> : name === 'contribute' ? <><rect x="3" y="4" width="13" height="10" rx="2" /><path d="M1 18h13" /><rect x="17" y="10" width="5" height="10" rx="1" /></> : name === 'activity' ? <><path d="M3 12h4l3-7 4 14 3-7h4" /></> : <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>}</svg>;
 }
 
 function ImageCard({ api, path, title, stage }: { api: Api; path: string; title: string; stage: string }) {
@@ -240,5 +292,5 @@ function ImageCard({ api, path, title, stage }: { api: Api; path: string; title:
     return () => { disposed = true; unlisten?.(); };
   }, [url]);
   useEffect(() => { const controller = new AbortController(); let objectUrl = ''; setUrl(''); setError(''); void api.image(path, controller.signal).then(blob => { if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } }).catch(error => { if (!controller.signal.aborted) setError(errorMessage(error)); }); return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); }; }, [api, path]);
-  return <figure>{url ? <a href={url} onClick={event => { if (!saveReady) { event.preventDefault(); return; } if (isMacDesktop) setSaveMessage('Saving…'); }} aria-label={`Save ${title}`} download={`pocketgrid-${title.replaceAll(' ', '-').toLowerCase()}.png`}><img src={url} alt={`${title}, locally generated`} width="256" height="256" /></a> : <div className="image-placeholder">{error || 'Loading image…'}</div>}<figcaption>{title} · {stage.includes('final') ? 'Ready' : 'Preview'}{url && ' · Save image'}</figcaption>{saveMessage && <small role="status">{saveMessage}</small>}</figure>;
+  return <figure>{url ? <a href={url} onClick={event => { if (!saveReady) { event.preventDefault(); return; } if (isMacDesktop) setSaveMessage('Saving…'); }} aria-label={`Save ${title}`} download={`gipu-${title.replaceAll(' ', '-').toLowerCase()}.png`}><img src={url} alt={`${title}, locally generated`} width="256" height="256" /></a> : <div className="image-placeholder">{error || 'Loading image…'}</div>}<figcaption>{title} · {stage.includes('final') ? 'Ready' : 'Preview'}{url && ' · Save image'}</figcaption>{saveMessage && <small role="status">{saveMessage}</small>}</figure>;
 }
