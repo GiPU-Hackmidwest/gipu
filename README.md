@@ -52,7 +52,7 @@ workers/python/.venv/bin/python workers/python/worker.py run --join-code YOUR-CO
 
 Back in the browser, go to **Create**, describe an image and press **Create**. 256 px and 12 steps is the quick test.
 
-The worker joins as its own account. To run it under your browser account instead, enable **Developer options** and copy the worker pairing token there and set `POCKETGRID_SESSION_TOKEN` before the worker's first run. Treat that token like a password.
+The worker joins as its own account. To run it under your browser account instead, enable **Developer options** and copy the worker pairing token there, then set `POCKETGRID_SESSION_TOKEN` before the worker's first run. Treat that token like a password.
 
 For frontend work with hot reload, run `npm --prefix apps/web run dev` and open http://localhost:5173. It proxies `/api` to the coordinator.
 
@@ -140,7 +140,7 @@ Set your domain and a private join code in `deploy/.env`, then start the grid:
 docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 ```
 
- Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
+Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
 
 ## 7. Optional: AI planner
 

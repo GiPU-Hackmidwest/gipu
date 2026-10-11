@@ -97,7 +97,7 @@ def test_planner_details_hide_other_members_devices(grid):
         raw['tools'] = [{'tool': 'inspect_devices', 'result': {'devices': [{'name': "Seller's MacBook"}]}}]
         db.execute('UPDATE jobs SET plan=? WHERE id=?', (json.dumps(raw), job['id']))
     view = store.view_job(store.existing_job(buyer, 'planned-001'), buyer)
-    assert view['plan']['explanation'] == 'Chose a grid device for speed'
+    assert view['plan']['explanation'] == 'Compatible devices selected for your request.'
     assert view['plan']['routes'] == {'image_generate': [], 'image_finalize': []}
     assert 'tools' not in view['plan']
 
@@ -124,3 +124,81 @@ def test_legacy_frame_can_be_turned_off(grid, monkeypatch):
     with pytest.raises(HTTPException):
         store.complete(laptop, export['id'], export['lease_id'], png(framed=True), {})
     assert store.complete(laptop, export['id'], export['lease_id'], png(), {})['accepted']
+
+
+@pytest.mark.parametrize('original_name, current_name', [('Pi', 'Pi'), ('Private old laptop', 'Renamed laptop')])
+def test_public_projection_hides_short_historical_names_and_raw_ids(grid, original_name, current_name):
+    store, buyer, foreign = grid['store'], grid['buyer'][0], grid['laptop']
+    with store.tx() as db:
+        db.execute('UPDATE devices SET name=? WHERE id=?', (original_name, foreign))
+    secret = f'{original_name} ({foreign})'
+    job = store.create_job(buyer, dict(request(), request_id='private-plan-001'), {
+        'mode': 'strands-test', 'explanation': secret,
+        'routes': {'image_generate': [foreign], 'image_finalize': [foreign]}})
+    task_id = job['tasks'][0]['id']
+    with store.tx() as db:
+        plan = json.loads(db.execute('SELECT plan FROM jobs WHERE id=?', (job['id'],)).fetchone()[0])
+        plan.update(dispatch_error=secret, extra=secret, review={'status': 'error', 'attempts': 1, 'error': secret, 'extra': secret},
+                    planning={'status': 'done', 'attempts': 1, 'claim_id': foreign},
+                    task_routes={task_id: {'device_ids': [foreign], 'until': 42, 'attempt': 0, 'explanation': secret, 'extra': secret},
+                                 foreign: {'device_ids': [], 'explanation': secret}})
+        db.execute('UPDATE jobs SET plan=? WHERE id=?', (json.dumps(plan), job['id']))
+        db.execute('UPDATE devices SET name=? WHERE id=?', (current_name, foreign))
+        db.execute('UPDATE tasks SET device_id=?,metrics=? WHERE id=?',
+                   (foreign, json.dumps({'backend': secret, foreign: secret, 'elapsed_seconds': 1.25}), task_id))
+        for kind in ('routing_updated', 'task_reassigned', 'job_failed', 'unknown_future_event'):
+            store.event(db, kind, secret, job_id=job['id'])  # No device ID to redact.
+        store.ledger(db, buyer, job['id'], 'refund', 0, secret)
+    state = grid['client'].get('/api/state', headers=grid['buyer'][1]).json()
+    view = grid['client'].get(f'/api/jobs/{job["id"]}', headers=grid['buyer'][1]).json()
+    for payload in (state, view):
+        text = json.dumps(payload)
+        assert foreign not in text and original_name not in text and current_name not in text
+    assert view['plan']['planning'] == {'status': 'done', 'attempts': 1}
+    assert view['plan']['task_routes'][task_id]['until'] == 42
+    assert view['tasks'][0]['metrics'] == {'elapsed_seconds': 1.25}
+    assert state['balance'] == 90 and state['reserved'] == 10
+    # Internal planner diagnostics remain intact for recovery and operator review.
+    assert store.existing_job(buyer, 'private-plan-001')['plan']['explanation'] == secret
+
+
+def test_own_device_names_routes_metrics_and_earnings_are_preserved(grid):
+    store, buyer = grid['store'], grid['buyer'][0]
+    # Duplicate names cannot be used to infer which names are safe in raw prose.
+    own = store.register(buyer, "Seller's MacBook", 'python', ['image_generate', 'image_finalize'], LIMITS)['device']['id']
+    grid['client'].patch(f'/api/devices/{own}', json={'enabled': True}, headers=grid['buyer'][1])
+    job = store.create_job(buyer, dict(request(), request_id='own-plan-001'), {
+        'mode': 'strands-test', 'explanation': f'{grid["laptop"]} and {own}',
+        'routes': {'image_generate': [own], 'image_finalize': [own]}})
+    task = store.claim(own)['task']
+    store.complete(own, task['id'], task['lease_id'], png(), {'backend': 'my-local-backend', 'elapsed_seconds': 2})
+    view = store.snapshot(buyer)
+    assert view['devices'][0]['name'] == "Seller's MacBook"
+    public_job = view['jobs'][0]
+    assert public_job['plan']['routes']['image_generate'] == [own]
+    completed = next(t for t in public_job['tasks'] if t['id'] == task['id'])
+    assert completed['device_id'] == own and completed['metrics']['backend'] == 'my-local-backend'
+    assert any(e['device_id'] == own and "Seller's MacBook" in e['message'] for e in view['events'])
+    assert any(e['message'] == '6 sandbox credits earned for accepted work' for e in view['events'])
+    assert view['earned'] == 6 and grid['laptop'] not in json.dumps(view)
+
+
+@pytest.mark.parametrize('end_assignment', ['cancel', 'expire'])
+def test_source_image_access_ends_with_unfinished_assignment(grid, end_assignment):
+    store, client = grid['store'], grid['client']
+    finisher = store.register(grid['stranger'][0], 'Private finisher', 'browser', ['image_finalize'], LIMITS)
+    device_id = finisher['device']['id']
+    client.patch(f'/api/devices/{device_id}', json={'enabled': True}, headers=grid['stranger'][1])
+    job_id = run_job(grid, finished=False)
+    source = store.claim(device_id)['task']['source_url']
+    auth = {'Authorization': f'Bearer {finisher["token"]}'}
+    assert client.get(source, headers=auth).status_code == 200
+    if end_assignment == 'cancel':
+        store.cancel(grid['buyer'][0], job_id)
+    else:
+        expired = store.clock() + store.lease_seconds + 1
+        store.clock = lambda: expired
+    # GET itself expires stale leases, without depending on a background tick.
+    assert client.get(source, headers=auth).status_code == 404
+    assert client.get(source, headers=grid['buyer'][1]).status_code == 200
+    assert client.get(source, headers=grid['laptop_auth']).status_code == 200  # Completed producer.

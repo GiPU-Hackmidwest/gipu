@@ -717,36 +717,63 @@ class Store:
         ready = lambda kind: sum(1 for d in devices if d['enabled'] and kind in d['capabilities'])
         return {'connected': len(devices), 'ready_to_create': ready('image_generate'), 'ready_to_finish': ready('image_finalize')}
 
-    def privacy(self, db, viewer_id):
-        rows = db.execute('SELECT id,name,owner_id FROM devices').fetchall()
-        own = {r['id'] for r in rows if r['owner_id'] == viewer_id}
-        own_names = {r['name'] for r in rows if r['owner_id'] == viewer_id}
-        names = sorted({r['name'] for r in rows if r['owner_id'] != viewer_id and r['name'] not in own_names and len(r['name'].strip()) >= 3}, key=len, reverse=True)
-        def scrub(text):
-            text = str(text or '')
-            for name in names:
-                text = text.replace(name, 'a grid device')
-            return text
-        return own, scrub
+    def own_devices(self, db, viewer_id):
+        return {r['id']: dict(r) for r in db.execute(
+            'SELECT id,name,kind FROM devices WHERE owner_id=?', (viewer_id,))}
+
+    @staticmethod
+    def public_plan(plan, own, task_ids):
+        """Project trusted fields, never redact free text using today's device names.
+
+        Planner explanations/errors/traces can contain old names, short names and
+        raw IDs. Keep those internally; member summaries come from fixed strings.
+        """
+        mode = plan.get('mode', '')
+        if mode not in ('manual', 'strands-ollama', 'strands-akamai', 'strands-bedrock'):
+            mode = 'strands' if mode.startswith('strands-') else 'manual'
+        result = {'mode': mode,
+                  'explanation': 'Compatible devices selected for your request.',
+                  'routes': {stage: [d for d in ids if d in own]
+                             for stage, ids in plan.get('routes', {}).items()
+                             if stage in ('image_generate', 'image_finalize')}}
+        if isinstance(plan.get('routing_until'), (int, float)):
+            result['routing_until'] = plan['routing_until']
+        for key in ('planning', 'review'):
+            if key not in plan:
+                continue
+            source = plan[key]
+            state = {k: source[k] for k in ('attempts', 'started_at', 'finished_at', 'next_retry_at')
+                     if isinstance(source.get(k), (int, float))}
+            if source.get('status') in ('pending', 'running', 'done', 'failed', 'cancelled', 'error'):
+                state['status'] = source['status']
+            if source.get('error'):
+                state['error'] = 'Device selection is temporarily unavailable.'
+            result[key] = state
+        if plan.get('dispatch_error'):
+            result['dispatch_error'] = 'Device selection could not finish.'
+        if 'task_routes' in plan:
+            result['task_routes'] = {}
+            for task_id, route in plan['task_routes'].items():
+                if task_id not in task_ids:
+                    continue
+                result['task_routes'][task_id] = {
+                    'device_ids': [d for d in route.get('device_ids', []) if d in own],
+                    'explanation': 'Device selection updated for this work.',
+                    **{k: route[k] for k in ('until', 'attempt') if isinstance(route.get(k), (int, float))}}
+        return result
 
     def public_job(self, db, job, viewer_id):
-        """A member's view of their own job: other members' devices stay anonymous."""
-        own, scrub = self.privacy(db, viewer_id)
+        """A member's view: own routes remain useful; foreign devices are anonymous."""
+        own = self.own_devices(db, viewer_id)
         job = copy.deepcopy(job)
         for task in job['tasks']:
             if task.get('device_id') not in own:
                 task['device_id'] = None
-        plan = job['plan']
-        # Planner traces carry every device's name and identifier.
-        plan.pop('tools', None)
-        plan.pop('reviews', None)
-        plan['explanation'] = scrub(plan.get('explanation'))
-        plan['routes'] = {stage: [d for d in ids if d in own] for stage, ids in plan.get('routes', {}).items()}
-        for route in plan.get('task_routes', {}).values():
-            route['device_ids'] = [d for d in route.get('device_ids', []) if d in own]
-            route['explanation'] = scrub(route.get('explanation'))
-        if plan.get('review', {}).get('error'):
-            plan['review']['error'] = scrub(plan['review']['error'])
+                # Worker-supplied metrics are free-form, including keys. Retain
+                # useful numeric timing without exposing arbitrary worker text.
+                task['metrics'] = {k: v for k, v in task.get('metrics', {}).items()
+                                   if k == 'elapsed_seconds' and isinstance(v, (int, float))}
+        job['plan'] = self.public_plan(job['plan'], own, {t['id'] for t in job['tasks']})
         return job
 
     def view_job(self, job, viewer_id):
@@ -766,38 +793,73 @@ class Store:
 
     def image_path(self, artifact_id, user=None, device=None):
         with self.tx() as db:
+            self.sweep(db)
             artifact = db.execute('SELECT a.*,j.owner_id FROM artifacts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?', (artifact_id,)).fetchone()
             allowed = artifact and (
                 (user and artifact['owner_id'] == user['id'])
-                or (device and db.execute('SELECT 1 FROM tasks WHERE device_id=? AND (id=? OR source_task_id=?)',
+                or (device and db.execute("SELECT 1 FROM tasks WHERE device_id=? AND status IN ('running','completed') AND (id=? OR source_task_id=?)",
                                           (device['id'], artifact['task_id'], artifact['task_id'])).fetchone()))
             if not allowed:
                 fail(404, 'Image not found')
         return self.root / 'images' / f'{artifact_id}.png'
 
     def public_events(self, db, user_id):
-        own, scrub = self.privacy(db, user_id)
-        jobs = {r['id'] for r in db.execute('SELECT id FROM jobs WHERE owner_id=?', (user_id,))}
+        own = self.own_devices(db, user_id)
+        jobs = {r['id']: dict(r) for r in db.execute('SELECT id,count,budget FROM jobs WHERE owner_id=?', (user_id,))}
         kinds = {r['id']: r['kind'] for r in db.execute('SELECT id,kind FROM devices')}
+        summaries = {
+            'routing_updated': 'Device selection updated for your request',
+            'task_reassigned': 'Image work queued again for another device',
+            'agent_review_failed': 'Device selection is unavailable; automatic recovery remains active',
+            'agent_reviewed': 'Execution results and device selection checked',
+            'job_completed': 'Images ready. Contributors paid; unused credits returned.',
+            'job_failed': 'Request could not finish; unused credits returned',
+            'job_cancelled': 'Cancelled; unfinished work refunded',
+        }
         events = []
         for row in db.execute('SELECT * FROM events WHERE user_id=? OR job_id IN (SELECT id FROM jobs WHERE owner_id=?) ORDER BY id DESC LIMIT 60', (user_id, user_id)):
             event = dict(row)
             mine = event['user_id'] == user_id
             if not mine and event['kind'] == 'credits_earned':
-                continue  # Another contributor's payment.
-            if event['device_id'] and event['device_id'] not in own:
-                word = DEVICE_WORDS.get(kinds.get(event['device_id']), 'device')
-                event['message'] = {'task_started': f'A grid {word} started work on your images',
-                                    'routing_applied': f'A planner-selected grid {word} took your work',
-                                    'task_reassigned': 'Image work queued again for another device'}.get(event['kind'], f'A grid {word} updated your request')
+                continue
+            device = own.get(event['device_id'])
+            word = DEVICE_WORDS.get(kinds.get(event['device_id']), 'device')
+            subject = device['name'] if device else f'A grid {word}'
+            # Do not forward stored messages: provider errors and routing events
+            # can leak names/IDs even when there is no associated device_id.
+            message = summaries.get(event['kind'], 'Grid activity updated')
+            if event['kind'] == 'task_started':
+                message = f'{subject} started work on your images' if not device else f'{subject} started image work'
+            elif event['kind'] == 'routing_applied':
+                message = f'{subject} took selected image work'
+            elif event['kind'] == 'device_paused' and device:
+                message = f'{subject} reached its contribution time limit' if event['message'] == 'Contribution time limit reached' else f'{subject} paused sharing'
+            elif event['kind'] == 'credits_earned' and mine:
+                # This exact coordinator-generated format has no arbitrary text.
+                earned_messages = {f'{price} sandbox credits earned for accepted work' for price in (1, 6)}
+                message = event['message'] if event['message'] in earned_messages else 'Sandbox credits earned for accepted work'
+            elif event['kind'] in ('job_created', 'job_planning') and event['job_id'] in jobs:
+                job = jobs[event['job_id']]
+                action = 'accepted for planning' if event['kind'] == 'job_planning' else 'queued'
+                message = f'{job["count"]} image(s) {action}; {job["budget"]} credits reserved'
+            event['message'] = message
+            if not device:
                 event['device_id'] = None
             if not mine:
                 event['user_id'] = None
             if event['job_id'] not in jobs:
-                event['job_id'] = None  # Own device working on someone else's request.
-            event['message'] = scrub(event['message'])
+                event['job_id'] = None
             events.append(event)
         return events
+
+    def public_ledger(self, db, user_id):
+        entries = [dict(row) for row in db.execute('SELECT * FROM ledger WHERE user_id=? ORDER BY created_at DESC LIMIT 60', (user_id,))]
+        for entry in entries:
+            # Refund reasons may embed planner errors. Amounts and job links are
+            # unchanged; the original reason remains in the coordinator ledger.
+            if entry['kind'] == 'refund':
+                entry['note'] = 'Unused reservation returned'
+        return entries
 
     def snapshot(self, user_id):
         with self.tx() as db:
@@ -812,7 +874,7 @@ class Store:
                 'devices': [self.device(db, row['id']) for row in db.execute('SELECT id FROM devices WHERE owner_id=? ORDER BY rowid', (user_id,))],
                 'jobs': [self.public_job(db, self.job(db, row['id']), user_id) for row in db.execute('SELECT id FROM jobs WHERE owner_id=? ORDER BY created_at DESC LIMIT 30', (user_id,))],
                 'events': self.public_events(db, user_id),
-                'ledger': [dict(row) for row in db.execute('SELECT * FROM ledger WHERE user_id=? ORDER BY created_at DESC LIMIT 60', (user_id,))],
+                'ledger': self.public_ledger(db, user_id),
                 'pricing': {'generate': 6, 'finalize': 1, 'fee': 1}, 'server_time': self.clock(),
             }
 
