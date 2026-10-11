@@ -1,6 +1,6 @@
 # Prototype verification — October 10, 2026
 
-Earlier checks ran on the development Mac; the hosted check below uses the Akamai coordinator and one real contributing Mac. Multiple worker processes in the recovery tests are **logical devices on one physical host**. A three-laptop/three-phone network test has not been performed.
+Earlier checks ran on the development Mac. The hosted checks below use the Akamai coordinator, first with one real contributing Mac and then with a physical laptop and phone. Multiple worker processes in the recovery tests are **logical devices on one physical host**. A three-laptop/three-phone network test has not been performed.
 
 | Check | Observed result |
 |---|---|
@@ -14,8 +14,8 @@ Earlier checks ran on the development Mac; the hosted check below uses the Akama
 | iOS native builds | Generic simulator arm64+x86_64 and unsigned physical iOS arm64 compiled with Xcode26.2. |
 | iOS native runtime | Xcode launched the app in iPhone17ProMax/iOS26.2 Simulator. Two real image jobs completed with native exports, image display, correct receipts, earned credits and a visible native notification banner. Manual Pause and Start → Home → reopen both left contribution paused. |
 | iOS exact pixel check |65,536pixels checked, border/interior exact; over-limit image rejected. Lifecycle race tests also pass. |
-| Coordinator and agent regressions |43tests: conservation, duplicate settlement, concurrency, lease recovery, resource limits, exact export verification, selected-device enforcement, fallback, per-stage preference windows, stale review fencing, SDK tool execution/budgets and slow-model isolation. Scripted models in unit tests are separate from the real Ollama check above. |
-| Akamai workshop adapter | Actual Strands/OpenAI adapter has simulated HTTP checks for routing, outcome review, missing keys and non-retried401. Subsequent live authentication, submission and the asynchronous planning test below used the configured workshop key. This does not imply the hosted coordinator has its planner configured. |
+| Coordinator and agent regressions |55tests: durable asynchronous planning (acknowledgment before model calls, request-ID idempotency, restart recovery, stale-plan fencing, cancellation during planning, bounded attempts and refunds), conservation, duplicate settlement, concurrency, lease recovery, resource limits, exact export verification, selected-device enforcement, fallback, per-stage preference windows, stale review fencing, SDK tool execution/budgets and slow-model isolation. Scripted models in unit tests are separate from the real Ollama check above. |
+| Akamai workshop adapter | Actual Strands/OpenAI adapter has simulated HTTP checks for routing, outcome review, missing keys and non-retried401. Subsequent live authentication, submission and the asynchronous planning test below used the configured workshop key. The hosted coordinator was later configured with this provider; see the hosted physical check below. |
 | Python worker regressions |4tests: frame/interior correctness, pause cancellation, denoising-step cancellation, and refusing external source URLs before forwarding credentials. |
 | Web bundle |TypeScript and Vite production build passed; live browser workflow exercised. |
 | Native Mac app |Tauri debug `.app` bundled and launched. Native login/network calls worked; an image job completed through laptop diffusion → Mac WebKit export. Receipt charged8/refunded2; Mac contributor earned1. Native notification opt-in succeeded; OS banner delivery was not asserted. |
@@ -58,9 +58,23 @@ On October 10, the merged code at `01cd02f` was exercised through an isolated lo
 
 The in-process `tests/live_agent_routing.py` harness now explicitly calls `plan_once` after asserting the durable acknowledgment, then reloads the stored job before reading routes. It previously assumed that `dispatch` had already planned the job and would fail before its recovery checks under the asynchronous contract. The repaired harness passed against the real Akamai provider: the agent rerouted an injected execution failure, the local CPU kernel generated the accepted image on attempt two in 3.397 seconds, and the terminal review inspected the balanced receipt. [Routing and review evidence](evidence/agent-routing-akamai.json) records those tool calls. Reproduce with `.venv/bin/python -m tests.live_agent_routing --provider akamai` after preparing the local model and provider key; this uses controlled clients on one Mac.
 
+## Hosted physical multi-device check
+
+On October 10, 2026, after the hosted coordinator was upgraded to `01cd02f` and configured with the Akamai `hackathon-chat` planner, a request from the PocketGrid iOS app on a physical iPhone completed using a physical laptop and a physical phone. [Recorded evidence](evidence/hosted-physical-e2e.json) covers job `01ae197431a24179816d965c2b9bf665`:
+
+- The 256×256, twelve-step, ten-credit agent request was acknowledged as `planning` with its budget reserved. The hosted planner queued it 15.06 seconds later on its first claim, calling `inspect_devices`, `quote_job`, `submit_job` and `inspect_job`.
+- Strands selected both sharing generation laptops ("Laptop 2", an Apple M3 Pro, and "Arboy Mac"). No export device was sharing, so it left that stage empty and the job waited instead of failing.
+- Arboy's Mac claimed the Strands-selected generation and produced the image with Tiny-SD on MPS in 1.049 seconds on attempt one.
+- A phone browser was then started for sharing and completed the export with browser canvas in 0.411 seconds on attempt one. The coordinator verified every pixel.
+- Receipt: ten reserved, six to the generation laptop, one to the phone, one fee and two refunded. The background planner then reviewed the completed job.
+
+About 195 seconds passed between generation and export because no export-capable device was sharing. That was a human wait, not system latency. This was one image and a single run. The export ran in a phone **browser**, not the native iOS app. Only one laptop generated, so parallel generation across laptops and physical multi-laptop failover remain untested.
+
+Earlier on the same deployment, a separate agent request with simulated workers confirmed the hosted acknowledgment path: POST returned `planning` in 0.17 seconds over the internet, a repeated request ID returned the same job, and planning completed on the first claim.
+
 ## Remaining external checks
 
-- **Akamai:** the coordinator runs on the team Linode behind Caddy with a Let's Encrypt certificate for its provider hostname (commit 3544d5f, October 10, 2026). Health, web UI, HTTP→HTTPS redirect, closed port 8787, a manual job with **simulated** generation/finalizer workers (receipt 10 = 7 + 1 fee + 2 refund) and persistence of the job, images, session and certificate across `compose down`/`up` were verified. The real laptop-worker check above subsequently passed. Physical phone finalization, deployment of the latest merged code and the Strands planner on the server remain unverified; the observed server runs in manual planner mode.
+- **Akamai:** the coordinator runs on the team Linode behind Caddy with a Let's Encrypt certificate for its provider hostname. It was first deployed at `3544d5f`, then upgraded to `01cd02f` after a data backup, and now uses the Akamai Strands planner. Health, web UI, HTTP→HTTPS redirect, closed port 8787 and persistence of jobs, images, sessions and the certificate across `compose down`/`up` were verified. The real-worker and physical multi-device checks above passed. Still unverified on the hosted grid: native iOS finalization on a physical iPhone, parallel generation on two laptops, physical multi-laptop failover, pause or session expiry during a hosted job, a coordinator restart during a job, and behavior across a host reboot.
 - **Bedrock:** integration is implemented; the existing default AWS credential check returned `InvalidClientTokenId`. Live AWS model invocation remains unverified. The SDK was tested with a real local model instead.
 - **Physical devices:** install on signed iPhones and other laptops, measure Wi-Fi transfer costs, test sleep/background/thermal behavior, and repeat failover. The iOS Simulator UI and notification permission/banner checks passed through ordinary Xcode Run; these do not measure physical-phone power or network behavior.
 - **Payments:** a transactionally tested sandbox ledger is implemented; no cash collection, payouts, or Flex API integration.
