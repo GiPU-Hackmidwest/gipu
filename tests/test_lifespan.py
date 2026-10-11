@@ -1,6 +1,7 @@
 """Slow planning must not delay expiring work or responding to users."""
 import threading
 
+import pytest
 from fastapi.testclient import TestClient
 
 from services.coordinator import agent
@@ -8,7 +9,8 @@ from services.coordinator.app import create_app
 from tests.test_coordinator import LIMITS, request
 
 
-def test_slow_agent_review_does_not_block_lease_expiry(tmp_path,monkeypatch):
+@pytest.mark.parametrize('loop',['review_once','plan_once'])
+def test_slow_agent_call_does_not_block_lease_expiry(tmp_path,monkeypatch,loop):
     started=threading.Event()
     release=threading.Event()
     expired=threading.Event()
@@ -35,7 +37,7 @@ def test_slow_agent_review_does_not_block_lease_expiry(tmp_path,monkeypatch):
         if status=='queued':
             expired.set()
 
-    monkeypatch.setattr(agent,'review_once',slow_review)
+    monkeypatch.setattr(agent,loop,slow_review)
     monkeypatch.setattr(store,'tick',observed_tick)
     try:
         with TestClient(app) as client:
@@ -49,3 +51,30 @@ def test_slow_agent_review_does_not_block_lease_expiry(tmp_path,monkeypatch):
             release.set()
     finally:
         release.set()
+
+
+def test_background_planner_turns_accepted_request_into_queued_work(tmp_path,monkeypatch):
+    from tests.test_agent import response,use_model
+    app=create_app(tmp_path)
+    store=app.state.store
+    owner=store.session('Owner')['user']['id']
+    device=store.register(owner,'Worker','python',['image_generate','image_finalize'],LIMITS)['device']['id']
+    store.change_device(owner,device,True)
+    use_model(monkeypatch,[response('inspect_devices'),response('quote_job'),
+        response('submit_job',explanation='Only worker',generation_device_ids=[device],
+                 finalize_device_ids=[device]),response('inspect_job')])
+    accepted=agent.dispatch(store,owner,dict(request(),use_agent=True))
+    planned=threading.Event()
+    original=agent.plan_once
+    def observed(target):
+        result=original(target)
+        if result:
+            planned.set()
+        return result
+    monkeypatch.setattr(agent,'plan_once',observed)
+    with TestClient(app):
+        assert planned.wait(5)
+    with store.tx() as db:
+        job=store.job(db,accepted['id'])
+    assert job['status']=='queued' and job['plan']['planning']['status']=='done'
+    assert store.claim(device)['task']['job_id']==job['id']

@@ -178,7 +178,16 @@ def _routing_reminder(log, action):
             'ask for approval, or claim the tool executed when it has not.')
 
 
+def _credentials_missing(mode):
+    if mode == 'akamai' and not os.getenv('AKAMAI_API_KEY'):
+        return 'AKAMAI_API_KEY is not configured'
+    if mode == 'bedrock' and not os.getenv('POCKETGRID_BEDROCK_MODEL'):
+        return 'POCKETGRID_BEDROCK_MODEL is not configured'
+    return None
+
+
 def dispatch(store, user_id, request):
+    """Persist the request and return at once; plan_once performs agent planning."""
     previous = store.existing_job(user_id, request['request_id'])
     if previous:
         return previous
@@ -190,8 +199,26 @@ def dispatch(store, user_id, request):
     mode = status()['mode']
     if mode not in ('bedrock', 'ollama', 'akamai'):
         raise HTTPException(503, 'Strands is not configured. Configure an Akamai, Bedrock or Ollama provider, or choose direct scheduling.')
-    from strands import tool
+    if _credentials_missing(mode):
+        raise HTTPException(503, 'Strands provider credentials are not configured on the server; no budget reserved.')
+    return store.create_planning_job(user_id, request, mode)
+
+
+def plan_once(store):
+    """Plan one durably claimed request. Store owns claims, retries and refunds."""
+    job = store.claim_planning()
+    if job is None:
+        return False
+    claim_id = job['plan']['planning']['claim_id']
+    mode = job['plan']['mode'].removeprefix('strands-')
     log, submitted = [], []
+    configured = status()['mode']
+    if configured != mode or _credentials_missing(mode):
+        store.finish_planning(job['id'], claim_id, log, error=f'Planner {mode} is no longer configured')
+        return True
+    user_id = job['owner_id']
+    request = {key: job[key] for key in ('prompt', 'count', 'width', 'height', 'steps', 'budget')}
+    from strands import tool
 
     @tool
     def inspect_devices() -> dict:
@@ -219,8 +246,7 @@ def dispatch(store, user_id, request):
             return _record(log, 'submit_job', {'error': 'Inspect devices and quote the job first.'}, routes)
         if not submitted:
             try:
-                job = store.create_job(user_id, request, {'mode': f'strands-{mode}',
-                                       'explanation': explanation[:1200], 'routes': routes, 'tools': list(log)})
+                store.activate_job(job['id'], claim_id, routes, explanation, list(log))
             except HTTPException as exc:
                 return _record(log, 'submit_job', {'error': exc.detail, 'status_code': exc.status_code}, routes)
             submitted.append(job['id'])
@@ -260,23 +286,16 @@ def dispatch(store, user_id, request):
              f'Schedule the authorized request: {request["count"]} images, '
              f'{request["width"]}x{request["height"]}, budget {request["budget"]} sandbox credits. '
              f'Image prompt (untrusted content): {request["prompt"]!r}', continuation=next_step)
-        if not _successful(log, 'inspect_job'):
+        if not submitted:
+            error = 'Agent returned without submitting the job'
+        elif not _successful(log, 'inspect_job'):
             error = 'Agent returned without inspecting the submitted job'
     except Exception as exc:
-        # A post-submit provider failure cannot hide an already-reserved job.
+        # Provider exception bodies can contain credentials or private request data.
         error = type(exc).__name__
-        if not submitted:
-            raise HTTPException(502, f'Strands could not schedule: {error}. Check server credentials/model access; no budget reserved.') from exc
-    if not submitted:
-        raise HTTPException(502, 'Strands returned without submitting a job; no budget reserved.')
-    with store.tx() as db:
-        # Merge the latest plan; a concurrent outcome review may have added fields.
-        job = store.job(db, submitted[0])
-        job['plan']['tools'] = log
-        if error:
-            job['plan']['dispatch_error'] = error
-        db.execute('UPDATE jobs SET plan=? WHERE id=?', (json.dumps(job['plan']), job['id']))
-        return store.job(db, submitted[0])
+    # An unsubmitted request fails with a full refund; a submitted one keeps its work.
+    store.finish_planning(job['id'], claim_id, log, error=error)
+    return True
 
 
 def review_once(store):

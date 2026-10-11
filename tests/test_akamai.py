@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from services.coordinator import agent
+from tests.test_agent import current, plan
 from tests.test_coordinator import request
 from tests.test_routing import grid
 
@@ -40,7 +41,7 @@ def test_akamai_http_tool_calls_create_real_selected_route(grid,monkeypatch):
     def client(**kwargs):
         return original_client(**kwargs,http_client=httpx.AsyncClient(transport=httpx.MockTransport(endpoint)))
     monkeypatch.setattr(openai,'AsyncOpenAI',client)
-    job=agent.dispatch(store,user,dict(request(),use_agent=True))
+    job=plan(store,user,dict(request(),use_agent=True))
     assert job['plan']['mode']=='strands-akamai'
     assert calls==['inspect_devices','quote_job','submit_job','inspect_job']
     assert store.claim(devices[0])['task'] is None
@@ -57,7 +58,7 @@ def test_missing_akamai_key_never_reserves_budget(grid,monkeypatch):
     monkeypatch.delenv('AKAMAI_API_KEY')
     with pytest.raises(HTTPException) as exc:
         agent.dispatch(store,user,dict(request(),use_agent=True))
-    assert exc.value.status_code==502
+    assert exc.value.status_code==503
     assert store.snapshot(user)['balance']==100
     assert not store.snapshot(user)['jobs']
 
@@ -73,8 +74,8 @@ def test_akamai_auth_failure_is_not_retried_or_exposed(grid,monkeypatch):
     def client(**kwargs):
         return original_client(**kwargs,http_client=httpx.AsyncClient(transport=httpx.MockTransport(endpoint)))
     monkeypatch.setattr(openai,'AsyncOpenAI',client)
-    with pytest.raises(HTTPException) as exc:
-        agent.dispatch(store,user,dict(request(),use_agent=True))
+    job=plan(store,user,dict(request(),use_agent=True))
     assert len(calls)==1
-    assert 'test-only-key' not in str(exc.value)
+    assert job['status']=='failed' and job['plan']['dispatch_error']=='AuthenticationError'
+    assert 'test-only-key' not in json.dumps(store.snapshot(user))
     assert store.snapshot(user)['balance']==100
