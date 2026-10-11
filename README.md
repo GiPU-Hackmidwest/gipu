@@ -14,6 +14,7 @@ Requires Python3.11, Node22, and approximately3GB free for the laptop worker and
 git clone https://github.com/pocketgrid-hackmidwest/pocketgrid.git
 cd pocketgrid
 cp .env.example .env  # first setup only; preserve an existing configuration
+# The coordinator's other settings have built-in defaults; planner settings are below.
 ./scripts/setup.sh
 ./scripts/server.sh
 ```
