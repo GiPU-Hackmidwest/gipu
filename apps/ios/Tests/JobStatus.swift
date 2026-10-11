@@ -14,9 +14,11 @@ struct JobStatusChecks {
          "width": size, "height": size, "price": 1, "progress": 0]
     }
 
-    static func job(_ tasks: [[String: Any]], status: String = "queued", images: [[String: Any]] = []) throws -> GridJob {
-        try decode(GridJob.self, ["id": "job", "owner_id": "owner", "prompt": "A cat", "status": status,
-                                 "budget": 10, "spent": 0, "refunded": 0, "tasks": tasks, "images": images, "count": 1])
+    static func job(_ tasks: [[String: Any]], status: String = "queued", images: [[String: Any]] = [], overrides: [String: Any] = [:]) throws -> GridJob {
+        var value: [String: Any] = ["id": "job", "owner_id": "owner", "prompt": "A cat", "status": status,
+                                   "budget": 10, "spent": 0, "refunded": 0, "tasks": tasks, "images": images, "count": 1]
+        value.merge(overrides) { _, new in new }
+        return try decode(GridJob.self, value)
     }
 
     static func device(_ overrides: [String: Any] = [:]) throws -> Device {
@@ -78,6 +80,93 @@ struct JobStatusChecks {
         let snapshot = try decode(Snapshot.self, ["user": ["id": "owner", "name": "Test"], "balance": 10, "reserved": 0, "earned": 0,
                                                  "devices": [], "jobs": [], "events": [], "agent": ["mode": "manual", "available": false]])
         check(snapshot.server_time == nil, "Older snapshots must still decode")
-        print("PASS: job stages, session expiry, capability/size/busy checks, safe Start CTA, preview/export selection and older snapshots")
+
+        let pendingPlan: [String: Any] = ["mode": "strands-ollama", "planning": ["status": "pending", "attempts": 0]]
+        let runningPlan: [String: Any] = ["mode": "strands-ollama", "planning": ["status": "running", "attempts": 1, "claim_id": "server-only-claim", "started_at": 1000]]
+        let planning = try job([], status: "planning", overrides: ["reserved": 10, "plan": pendingPlan])
+        check(planning.isPlanning && planning.isActive, "Acknowledged planning request must be cancellable")
+        check(planning.planningTitle == "Waiting for the planner")
+        check(planning.stageState("image_generate", devices: [], serverTime: 1000) == .planning, "Empty planning tasks became unavailable capacity")
+        check(planning.stageState("image_finalize", devices: [], serverTime: 1000) == .planning, "Planning became a finishing queue")
+        check(!planning.canStartFinishing(on: phone, limits: Limits()), "Planning must not suggest starting a phone")
+        check(planning.submissionAcknowledgement.contains("saved") && planning.submissionAcknowledgement.contains("10 credits reserved"))
+        let selecting = try job([], status: "planning", overrides: ["reserved": 9, "plan": runningPlan])
+        check(selecting.planningTitle == "Planning your request")
+        check(selecting.reservedCredits == 9 && selecting.planningMessage.contains("9 credits"), "UI must prefer server-reported reservation")
+
+        let fullReceipt: [String: Any] = ["budget": 10, "contributor_total": 0, "platform_fee": 0, "refund": 10, "total_charged": 0]
+        let failedPlan: [String: Any] = ["mode": "strands-ollama", "planning": ["status": "failed"], "dispatch_error": "TimeoutError"]
+        let planningFailure = try job([], status: "failed", overrides: ["plan": failedPlan, "refunded": 10, "reserved": 0, "receipt": fullReceipt])
+        check(planningFailure.failedDuringPlanning && !planningFailure.isActive)
+        check(planningFailure.statusLabel == "Planning failed")
+        check(planningFailure.fullRefundConfirmed && planningFailure.terminalSummary?.contains("full budget of 10") == true)
+        var mismatchedBudget = fullReceipt
+        mismatchedBudget["budget"] = 11
+        check(try !job([], status: "failed", overrides: ["plan": failedPlan, "receipt": mismatchedBudget]).fullRefundConfirmed,
+              "Receipt budget must match the request before claiming a full refund")
+        var nonzeroCharge = fullReceipt
+        nonzeroCharge["total_charged"] = 1
+        check(try !job([], status: "failed", overrides: ["plan": failedPlan, "receipt": nonzeroCharge]).fullRefundConfirmed,
+              "A charged receipt must not claim a full refund")
+        let unconfirmedRefund = try job([], status: "failed", overrides: ["plan": failedPlan, "refunded": 10])
+        check(!unconfirmedRefund.fullRefundConfirmed && unconfirmedRefund.terminalSummary?.contains("full budget") == false,
+              "Refund total alone must not establish a fully refunded receipt")
+        let chargedReceipt: [String: Any] = ["budget": 10, "contributor_total": 6, "platform_fee": 0, "refund": 4, "total_charged": 6]
+        let afterPlanning = try job([task("image_generate", "completed"), task("image_finalize", "cancelled")], status: "failed",
+                                   overrides: ["plan": ["planning": ["status": "done"], "dispatch_error": "LaterReviewError"], "spent": 6, "refunded": 4, "receipt": chargedReceipt])
+        check(!afterPlanning.failedDuringPlanning && !afterPlanning.fullRefundConfirmed,
+              "A later processing failure must not be labeled as a planning failure/full refund")
+        check(afterPlanning.terminalSummary?.contains("4 credits returned") == true)
+        check(try job([], status: "failed").failedDuringPlanning == false, "Empty legacy tasks do not prove planning failed")
+        let cancelledPlanning = try job([], status: "cancelled", overrides: ["plan": runningPlan, "refunded": 10, "receipt": fullReceipt])
+        check(cancelledPlanning.cancelledDuringPlanning && !cancelledPlanning.isActive)
+        check(cancelledPlanning.statusLabel == "Planning cancelled" && cancelledPlanning.fullRefundConfirmed)
+        let oldSync = try job([task("image_generate", "queued")], overrides: ["plan": ["mode": "strands-ollama", "explanation": "Selected devices"]])
+        let readyGenerator = try device()
+        check(!oldSync.isPlanning && oldSync.stageState("image_generate", devices: [readyGenerator], serverTime: 1000) == .ready,
+              "Older synchronous Strands responses must keep working")
+
+        // POST succeeds, then GET /state fails or an older in-flight snapshot
+        // arrives: the saved job must remain visible with its Cancel action.
+        var acknowledged = AcknowledgedJobs()
+        let beforePOST = acknowledged.revision
+        acknowledged.retain(planning)
+        check(acknowledged.merged(with: []).first?.isActive == true, "Refresh failure hid an accepted planning request")
+        acknowledged.reconcile([], requestedAt: acknowledged.revision)
+        check(acknowledged.jobs.count == 1, "Snapshot missing the job erased its acknowledgment")
+        acknowledged.reconcile([planning], requestedAt: beforePOST)
+        check(acknowledged.jobs.count == 1, "A pre-POST snapshot erased the retained acknowledgment")
+        let beforeCancel = acknowledged.revision
+        acknowledged.retain(cancelledPlanning)
+        acknowledged.reconcile([planning], requestedAt: beforeCancel)
+        check(acknowledged.merged(with: [planning]).first?.status == "cancelled", "A stale snapshot revived a cancelled request")
+        acknowledged.reconcile([cancelledPlanning], requestedAt: acknowledged.revision)
+        check(acknowledged.jobs.isEmpty && acknowledged.merged(with: [cancelledPlanning]).count == 1,
+              "A fresh snapshot should replace the retained acknowledgment without duplicate cards")
+
+        // Reproduce the late pre-cancel response after a fresh snapshot already
+        // removed the retained cancellation. The entire old snapshot is rejected.
+        var cache = AcknowledgedJobs()
+        var gate = SnapshotGate()
+        cache.retain(planning)
+        let stale = gate.begin(acknowledgmentRevision: cache.revision)
+        cache.retain(cancelledPlanning)
+        let fresh = gate.begin(acknowledgmentRevision: cache.revision)
+        var displayed = [planning]
+        if gate.accept(fresh, acknowledgmentRevision: cache.revision) {
+            displayed = [cancelledPlanning]
+            cache.reconcile(displayed, requestedAt: fresh.acknowledgmentRevision)
+        }
+        check(cache.jobs.isEmpty)
+        if gate.accept(stale, acknowledgmentRevision: cache.revision) { displayed = [planning] }
+        check(displayed.first?.status == "cancelled", "Late snapshot revived a cancelled job after cache reconciliation")
+        let earlier = gate.begin(acknowledgmentRevision: cache.revision)
+        let later = gate.begin(acknowledgmentRevision: cache.revision)
+        check(gate.accept(later, acknowledgmentRevision: cache.revision))
+        check(!gate.accept(earlier, acknowledgmentRevision: cache.revision), "Out-of-order responses with the same acknowledgment revision must be fenced")
+        let preMutation = gate.begin(acknowledgmentRevision: cache.revision)
+        cache.retain(planningFailure)
+        check(!gate.accept(preMutation, acknowledgmentRevision: cache.revision), "A pre-acknowledgment snapshot must be rejected even before a newer fetch completes")
+        print("PASS: async planning/cancellation/refunds, full-snapshot ordering, accepted-response retention, job stages, safe Start CTA and older snapshots")
     }
 }
