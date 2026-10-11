@@ -17,22 +17,22 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
 | C1 | Downloadable, easy app | review: release workflow (`ci/v1-releases`); DMG + signed APK built locally; Android signing secrets pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
-| C2 | QR sign-in, same credit account | review: contract + `identity.ts`, server (`feat/v1-server-identity-privacy`); review: Android adapters (#24); todo: hosted deploy | todo: Mac/iOS sign-in + link UI, iOS scanner |
-| C3 | Private sessions | review: server scoping; todo: hosted deploy | todo: own-only presentation |
+| C2 | QR sign-in, same credit account | review: contract/server merged; review: Android adapters (#24); todo: hosted deploy | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
+| C3 | Private sessions | review: corrected server scoping merged; todo: hosted deploy | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
 | C6 | Create images / Finish images toggles | todo: verify on Android | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
-| C7 | Activity without sensitive info | review: server sanitizing | todo: Activity presentation |
-| C8 | Device counts, no test devices | review: `grid` counts (stale devices excluded); todo: hosted DB cleanup if still needed | todo: landscape on Mac/iOS |
-| C9 | Logo | done: GiPU icons on main (`c1aa300`); todo: Android notification icon | blocked on Phase 0: iOS icon, in-app mark |
-| C10 | Rename to GiPU | review: Tauri `productName`/window title and Android label are GiPU (`ci/v1-releases`); bundle IDs unchanged | in progress: GiPU text implemented; current icon retained pending Phase 0 |
-| C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | todo: shimmer, iOS finalize, Mac/iOS notify |
+| C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
+| C8 | Device counts, no test devices | review: `grid` counts merged; todo: hosted deploy/cleanup if needed | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
+| C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
+| C10 | Rename to GiPU | review: Tauri `productName`/window title and Android label are GiPU (`ci/v1-releases`); bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
+| C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | partial: authoritative verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime remains legacy until deploy |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
 | C15 | Contribute layout on large screens | — | done: Mac and 320 px browser layout checked |
 
-Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. Status: **todo**.
+Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
 
@@ -53,6 +53,20 @@ Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. St
   2. Optionally set `GIPU_DEFAULT_GRID` once the hosted grid runs the V1 server.
   3. Tag `v0.2.0` when ready.
 - **Codex note:** the Mac window and app are now named GiPU. `worker.rs` still says "PocketGrid app data" in one error message (Codex-owned).
+
+### 2026-10-11 · Codex · completed integration (`docs/v1-integration-results`)
+
+- PRs #18–#25 are merged into main, through `f59d99f`; the local main checkout is synchronized. Personal Xcode signing changes were preserved exactly and remain uncommitted. No open PR remained at the final integration check.
+- Final combined validation: 78 frontend tests, 16 Rust tests (one existing ignored fixture), frontend production build and bundled native Mac build passed. The final iOS catalog also built successfully in host Xcode for iPhone 17 Pro Max simulator at 02:56 local time. No physical-phone test is claimed.
+- **Handoff:** Claude owns hosted coordinator deployment, coordinated runtime finalizer rollout, Tauri release/product-name packaging and final Android device validation. Codex's iOS invisible encoder is staged and pixel-tested; keep its legacy runtime until compatible deployment is confirmed. Arboy/Sitha still need real phone QR decoding and phone finishing checks, followed by release/signing validation. The overall V1 is not marked complete.
+
+### 2026-10-11 · Codex · brand and Android account integration (`feat/v1-account-ui`)
+
+- PR #23 merged as `80d6a2d` and #24 as `f9a32a7`; integration commit `e5e458d` preserves the account UI and both platform storage implementations. No account-UI PR number is assigned in this entry.
+- **Brand:** `brand/` is the accepted asset source. Tauri/Android icons came from #23; Mac/web and iOS in-app marks plus the native SwiftUI AppIcon catalog are implemented. Bundle identifiers and environment names stay unchanged. The brand dot uses `#FF5A09` as a static mark, while white action labels retain `#C34400`; the logo does not indicate active sharing. Tauri productName, Android/release naming and remaining distribution work stay with Claude.
+- **Android:** shared sign-in now selects the Keystore-backed session adapter only on Android. Camera scans honor AbortSignal on cancellation/teardown/backgrounding. Incoming links require confirmation before account changes; worker cleanup and credential ordering remain intact. The reviewed adapter correction rejects failed durable deletion, removes stale plaintext when secure storage wins, and tears down listeners if the cold-link read fails. Dependencies remain Android-only deep-link 2.6.1 and barcode-scanner 2.5.2, alongside the previously coordinated QR/Keychain dependencies.
+- **Verification:** the pre-Android account baseline passed **66 frontend tests**, including the foreign-earnings privacy regression. The separate #24 review passed **61 frontend tests**, production frontend build and **15 Rust tests / one ignored**. **Combined integration:** 78 frontend tests, 16 Rust tests (one ignored) and the production frontend/native Mac bundled build passed. The final iOS asset catalog built successfully through Xcode on the iPhone 17 Pro Max simulator destination at 02:56 local time. Terminal builds remain limited by simulator-service sandbox access; the final physical-device build is not claimed. Earlier iOS source builds/harnesses predate the new catalog.
+- **Remaining gates:** final integrated checks, confirmed compatible hosted coordinator deployment, physical QR decoding and phone finishing, and release artifacts/distribution. Finishers remain legacy-compatible until deployment is confirmed. No full V1 sign-off or physical-device proof is implied.
 
 ### 2026-10-11 · Codex · Android adapter review and integration (#24)
 
@@ -98,6 +112,15 @@ Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. St
   ```
   Restyle `.qr-scan` freely, but keep the page transparent while `html[data-scanning]` is set.
 - **Brand.** The GiPU logo is on `feat/gipu-brand` (`c4cbde6`, `brand/`, including `brand/android/` launcher layers and `ic_stat_gipu.svg`). Once it merges, Claude will wire the Tauri desktop and Android launcher icons and the Android notification icon (`plugins.notification.icon`).
+
+### 2026-10-11 · Codex · account UI review (PR #25 · `feat/v1-account-ui`)
+
+- PRs #18–#22 are merged, including the #19 contract, #20 privacy correction (`ed8cbec`), #21 README (`e8db6fd`) and #22 controls (`eb365a9`). This work implements Mac/iOS sign-in and account linking, private presentation, anonymous grid counts and verification shimmer against that baseline. C2/C3/C7/C8 are in review, not complete; C11 remains partial until finisher rollout.
+- **Shared-file coordination/dependencies:** `qrcode.react` **4.2.0** renders QR SVGs locally; macOS-only `security-framework` **3.7** stores sessions in Keychain through the existing `SessionStore` boundary. Package/Cargo locks and `lib.rs` registration change together. `ApiError.status` supports safe handling of revoked sessions. Shared origin parsing rejects credentials and malformed URLs. These changes are coordinated across `api.ts`, `identity.ts`, types and platform storage; Android adapters remain separate. QR contents never go to an external rendering service.
+- **Behavior:** Link QR/code retains the same account and balance; New account creates a separate account. Mac migrates the earlier locally stored session to Keychain. Leaving stops owned contribution before credentials are discarded. Jobs/devices are filtered to the current account; Activity uses generic labels. `state.grid` supplies anonymous counts, with missing/invalid counts shown as unavailable. Only explicit `verified: false` shimmers, `true` confirms verification; a missing field does not imply verification.
+- **Verification:** **66 frontend tests** passed in the pre-Android account baseline, including five storage and ten identity tests. The native Mac build passed; Rust passed **16**, with one ignored fixture. In actual browsers on two origins, a new account generated a link code and the second client redeemed it into the same account with **100** credits. The native Mac app migrated an existing V1 session into Keychain with its **99**-credit balance. A real teapot request was generated by that Mac account and finished by the linked browser account. Both linked clients showed the same image, **93 available / 0 reserved / 1 earned** (8-credit cost plus 1 credit earned finishing). The Mac account showed **105 available / 13 earned** after earning 6 for generation, and retained only its own earlier cat image; the other account’s teapot was absent. Activity labels stayed generic without Mac device names. Native relaunch retained the 105-credit account, Show QR rendered, and Sign out returned to sign-in. Captures: `outputs/v1-mac-account.png` and `outputs/v1-linked-account-result.png`. Shimmer CSS/selection behavior is tested; its transient animation was not captured. The foreign-earnings presentation regression passed in the 66-test account baseline; combined Android integration checks are recorded separately above.
+- **iOS:** arm64/x86_64 simulator and unsigned arm64 device builds passed. IdentityPrivacy, JobStatus, LifecycleRace and all **17** NotificationOwnership checks passed. The staged invisible encoder preserved all **65,536** RGB pixels across RGB, RGBA and indexed PNG inputs and rejected oversized input; production legacy frame/interior parity also passed. `GridModel` still uses the legacy finalizer. Rendered V1 UI testing is blocked by CoreSimulatorService sandbox access; no physical-phone or camera/scanner result is claimed.
+- **Handoff:** preserve the new Mac commands, storage boundary and QR dependency when adding Android adapters. iOS remains native SwiftUI with Keychain and an on-demand scanner/manual fallback. Confirm compatible hosted coordinator deployment before switching any finalizer; `grid`/`verified` fields are not version negotiation. Brand assets have since landed via #23; release distribution and physical-device verification remain outstanding. Earlier log entries retain their original historical verification scope.
 
 ### 2026-10-11 · Codex · README review (PR #21 · `fix/v1-readme-review`)
 

@@ -12,7 +12,7 @@ Preserve each developer's local signing settings in `PocketGrid.xcodeproj/projec
 
 There is no published iOS download or TestFlight invitation in this repository yet. The supported distribution path is a source build on a Mac with Xcode 26.2 or later and the iOS SDK. The app supports iOS 17+. No separate Swift packages or model download are required for the phone app.
 
-Clone the repository, then open `apps/ios/PocketGrid.xcodeproj`. Its project and scheme remain named **PocketGrid**; the installed app displays **GiPU**. Bundle identifiers and Keychain identifiers are unchanged. The current icon is temporary until the shared brand assets arrive.
+Clone the repository, then open `apps/ios/PocketGrid.xcodeproj`. Its project and scheme remain named **PocketGrid**; the installed app displays **GiPU**. Bundle identifiers and Keychain identifiers are unchanged. The official GiPU icon and adaptive in-app mark are included in `PocketGrid/Assets.xcassets`. The light/dark AppIcon PNGs preserve the shared brand pixels with their fully opaque alpha channel removed; the in-app mark uses the original light/dark SVGs.
 
 For a simulator, choose an installed iPhone simulator and select **Product → Run**. For a physical phone, connect the iPhone, select it as the destination, and choose your own Apple development team under **Signing & Capabilities**. Follow Xcode's device preparation and signing prompts. Preserve these personal signing settings locally. The unsigned command-line build below cannot be installed on a phone.
 
@@ -21,16 +21,26 @@ TestFlight distribution needs an Apple Developer Program team, App Store Connect
 ## Join and use
 
 1. Start the coordinator using the repository README. For a physical phone, bind it to `0.0.0.0:8787` and connect the phone and server to the same trusted Wi-Fi network.
-2. Launch **GiPU**. Enter a name and the configured join code (`pocketgrid-demo` for local development). Expand **Grid address** for a local server such as `http://YOUR-MAC-LAN-IP:8787`, or use the intended hosted HTTPS grid. `127.0.0.1` works in the simulator on the coordinator Mac; it points at the phone itself on a physical phone. QR sign-in awaits the shared identity contract.
+2. Launch **GiPU** and choose **Scan QR**. Scan the Link QR from **Account → Link a device** on an already signed-in device to keep its account and balance. An Invite QR creates a new account instead. Review the displayed grid before continuing; replacing a signed-in account requires confirmation and stops sharing. If camera scanning is unavailable (including the simulator), expand **Sign in another way** for a link code, username/password, or a new account with the grid/name/join code. `127.0.0.1` refers to the Mac in its simulator but to the phone itself on physical hardware. Use the intended hosted HTTPS grid or the Mac’s LAN address.
 3. Allow Local Network access when iOS asks. Joining does **not** start contribution.
 4. In **Contribute**, choose **Stop after** and turn on **Finish images**. Turning it off pauses immediately. Keep the app visible. The phone does not offer **Create images** contribution; image generation needs a prepared laptop worker.
 5. Request an image in **Create**. **Activity → Developer options** optionally exposes maximum image size, the fixed CPU-thread count, device telemetry, planner selection and request/device diagnostics. Enable the page explicitly; opening it or turning Developer options on does not start sharing. Pause finishing before changing image limits.
 
 If the network isolates clients (common on event Wi-Fi), use a trusted hotspot or the HTTPS cloud coordinator. This prototype permits HTTP for local development; use an HTTPS coordinator for deployment.
 
+## Accounts and compatibility
+
+**Activity → Account** shows a short-lived Link QR/code and an optional login for recovery. Link codes last 120 seconds and are single use; requesting a new code invalidates the previous code. Passwords and codes are not persisted by this app. Session and device credentials remain in Keychain. Sign-out pauses this phone before requesting session revocation and clearing local credentials. Sign-in requests never carry the previous account’s token, including when a QR points to another grid.
+
+The native parser follows `apps/web/src/identity.ts` and additionally rejects embedded username/password credentials in a grid origin. `gipu://join` and `gipu://link` URLs are registered with iOS. Camera access is requested only after **Scan QR**. VisionKit scanning requires supported hardware; the typeable code/manual route remains available.
+
+A V1 coordinator is required for linking, login, aggregate counts and authoritative verification. Missing counts display as unavailable. Own-job/device filtering and generic event text also protect the presentation when an older coordinator returns broad snapshots; server-side authorization is still required. Only `verified: false` activates shimmer; `true` shows Verified. Missing verification fields use neutral Ready/Preview labels without a verification claim.
+
 ## What actually runs here
 
-The phone advertises `image_finalize`, never `image_generate`. It downloads an image produced by a laptop’s model, applies a four-pixel RGB `(36,203,166)` inner frame using local CoreGraphics pixel operations, and uploads the PNG. The coordinator verifies the border and **every interior pixel** before paying the fixed sandbox credit amount. No cloud generation call is made by this app.
+The phone advertises `image_finalize`, never `image_generate`. **Runtime rollout is intentionally still legacy:** it downloads an image produced by a laptop’s model, applies a four-pixel RGB `(36,203,166)` inner frame using local CoreGraphics pixel operations, and uploads the PNG. The coordinator verifies the border and **every interior pixel** before paying the fixed sandbox credit amount. No cloud generation call is made by this app.
+
+`ImageProcessor.finalizeInvisible` is a separately tested pixel-identical PNG re-encoder, ready for V1 cutover. `GridModel` does not call it yet. Do not infer finisher compatibility from `grid` or `verified`; the contract has no version negotiation. Switch the runtime only after the accepting coordinator deployment is explicitly confirmed.
 
 - One active image at a time, using one CPU thread. The native phone worker has no adjustable CPU-thread control.
 - Maximum image pixels and timed contribution session are enforced by the coordinator, with a second pixel-limit check in the phone worker.
@@ -39,7 +49,7 @@ The phone advertises `image_finalize`, never `image_generate`. It downloads an i
 - Contribution generations reject delayed Start/heartbeat/claim replies from an older session. New starts wait for outstanding Start/Pause updates to settle; a delayed Start after backgrounding is revoked again.
 - Credentials persist in the iOS Keychain. The app never puts bearer tokens in image URLs. Relaunching pauses any old contribution session.
 - **Activity → Notifications** requests native notification permission only after a tap. In-app activity always works. Native notifications are generated from newly received work/credit/job events while the app runs; remote push after app closure is not implemented.
-- Grid inputs are visible to participating workers. Use public demo prompts and images. Credits are sandbox units with no cash value.
+- Assigned inputs remain visible to participating workers. The UI shows the current account’s requests and generic activity only. Credits are sandbox units with no cash value.
 
 ## Build and verification
 
@@ -102,6 +112,25 @@ mkdir -p .build
 xcrun swiftc -module-cache-path .build/MacModuleCache \
   PocketGrid/Models.swift Tests/NotificationOwnership.swift -o .build/notification-ownership
 .build/notification-ownership
+```
+
+V1 accounts verification on October 11, 2026:
+
+- Simulator arm64/x86_64 and unsigned iOS arm64 builds passed. No signing/project configuration changes or third-party dependencies were needed.
+- `IdentityPrivacy.swift` passed link round trips, malformed/unsafe-origin rejection, old/new session decoding, own-only data filtering, generic event text and the optional verification flag. JobStatus, LifecycleRace and the 17 NotificationOwnership checks also passed.
+- The staged invisible encoder preserved all 65,536 decoded RGB pixels for RGB, alpha-bearing RGBA and indexed-color PNG sources; size-limit rejection passed. The production legacy frame/interior parity check also passed.
+- Camera scanning, QR transfer, live account linking/login, Keychain behavior across real app launches and rendered shimmer were not exercised in this compile-only pass. These checks do not establish physical-phone or deployed-server compatibility. The frameless runtime cutover remains pending confirmed deployment.
+
+Run the new standalone harnesses from `apps/ios`:
+
+```sh
+mkdir -p .build
+xcrun swiftc -module-cache-path .build/MacModuleCache \
+  PocketGrid/Models.swift Tests/IdentityPrivacy.swift -o .build/identity-privacy
+.build/identity-privacy
+xcrun swiftc -module-cache-path .build/MacModuleCache \
+  PocketGrid/ImageProcessor.swift Tests/InvisiblePixelParity.swift -o .build/invisible-parity
+python3 Tests/check_invisible_pixels.py .build/invisible-parity .build/invisible
 ```
 
 V1 controls verification on October 11, 2026:

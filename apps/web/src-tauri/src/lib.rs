@@ -1,6 +1,8 @@
 // The Python worker is a desktop process; phones and tablets contribute exports from the webview.
 #[cfg(desktop)]
 mod worker;
+#[cfg(desktop)]
+mod mac_session;
 
 #[cfg(desktop)]
 use tauri::Manager;
@@ -43,6 +45,9 @@ pub fn run() {
             worker::model_status,
             worker::download_model,
             worker::cancel_model_download,
+            mac_session::load_mac_session,
+            mac_session::save_mac_session,
+            mac_session::clear_mac_session,
         ])
         .on_window_event(|window, event| {
             if matches!(

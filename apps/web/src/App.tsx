@@ -1,8 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Brand } from './Brand';
+import { SignInScreen } from './SignInScreen';
+import { AccountPage } from './AccountPage';
+import { sessionStore } from './sessionStorage';
+import { signOut } from './identity';
+import { stopAndSignOut } from './accountLifecycle';
+import { activityLabel, creditLabel, gridCounts, imageLabel, privateSnapshot, visibleImages } from './publicPresentation';
 import { ContributionToggle } from './ContributionToggle';
-import { Api, askNotifications, copyText, errorMessage, isDesktop, isMacDesktop, isMobileApp, notify } from './api';
+import { Api, askNotifications, copyText, errorMessage, isAndroidApp, isDesktop, isMacDesktop, isMobileApp, notify } from './api';
 import { BrowserWorker } from './browserWorker';
 import { GridScene } from './GridScene';
 import { DesktopWorkerPanel } from './DesktopWorkerPanel';
@@ -10,44 +17,47 @@ import { canPauseDevice, canStartDevice, deviceStatus, isSharing } from './devic
 import { shouldNotifyEvent } from './eventNotifications';
 import { canCancelJob, jobAcknowledgement, jobProgress } from './jobStatus';
 import { initialJobSync, mergeJobResponses, reconcileSnapshot, retainJobResponse, snapshotIsCurrent } from './jobSync';
-import type { Device, DeviceCredential, Job, Limits, Session, Snapshot } from './types';
+import type { Device, DeviceCredential, GridLink, Job, Limits, Session, Snapshot } from './types';
 
-const sessionKey = 'pocketgrid.session.v1';
 const developerKey = 'pocketgrid.developer-options';
 function storedDeveloperOptions() { try { return localStorage.getItem(developerKey) === 'true'; } catch { return false; } }
 const defaultLimits: Limits = { cpu_threads: 2, max_pixels: 262144, session_minutes: 30 };
-function storedSession(): Session | null { try { return JSON.parse(localStorage.getItem(sessionKey) || 'null'); } catch { return null; } }
 function displayTime(value: number) { return new Date(value * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
 function uniqueId() { return globalThis.crypto?.randomUUID?.() ?? `web-${Date.now()}-${Math.random().toString(16).slice(2)}`; }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(storedSession);
-  if (!session) return <SignIn onSession={value => { localStorage.setItem(sessionKey, JSON.stringify(value)); setSession(value); }} />;
-  return <Dashboard key={`${session.server}:${session.token}`} session={session} onSignOut={() => { localStorage.removeItem(sessionKey); setSession(null); }} />;
-}
-
-function SignIn({ onSession }: { onSession: (session: Session) => void }) {
-  const [name, setName] = useState('');
-  const [code, setCode] = useState('pocketgrid-demo');
-  const [server, setServer] = useState(isDesktop ? import.meta.env.VITE_DEFAULT_COORDINATOR ?? 'https://66-228-53-243.ip.linodeusercontent.com' : isMobileApp ? import.meta.env.VITE_DEFAULT_COORDINATOR ?? '' : '');
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError('');
-    try {
-      const normalized = server.trim().replace(/\/$/, '');
-      if (normalized && !/^https?:\/\//.test(normalized)) throw new Error('Use an http:// or https:// server address.');
-      const result = await new Api(normalized, '').request<{ token: string; user: { name: string } }>('/sessions', { name: name.trim(), join_code: code });
-      onSession({ token: result.token, name: result.user.name, server: normalized });
-    } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
-  }
-  return <main className="onboarding"><div className="brand">◉ GiPU</div><h1><em>Welcome to</em><br />GiPU.</h1><p>Make something together.</p><form onSubmit={submit} className="panel stack"><h2>Join your grid</h2><label>Your name<input value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Alex" maxLength={60} required /></label><label>Grid invite code<input type="password" autoComplete="off" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={code} onChange={e => setCode(e.target.value)} required /></label><details open={isMobileApp}><summary>Grid address</summary><label>Address<input value={server} onChange={e => setServer(e.target.value)} placeholder={isMobileApp ? "https://your-grid" : "Same server as this page"} type="text" inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} required={isMobileApp} /><small>{isMobileApp ? 'Use your grid’s https:// address.' : isDesktop ? 'Use the same grid on all your devices.' : 'Leave blank to use this page’s grid.'}</small></label></details>{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !name.trim()}>{busy ? 'Joining…' : 'Join grid'}</button><small>Sharing stays off until you start. Sandbox credits only.</small></form></main>;
+  const [attempt, setAttempt] = useState(0);
+  const [incomingLink, setIncomingLink] = useState<GridLink | null>(null);
+  const [linkError, setLinkError] = useState('');
+  useEffect(() => {
+    if (!isAndroidApp) return;
+    let disposed = false; let unlisten: (() => void) | undefined;
+    void import('./android').then(module => module.androidAdapters()).then(adapters => {
+      if (disposed) return;
+      return adapters.listenForGridLinks(link => { if (!disposed) { setIncomingLink(link); setLinkError(''); } });
+    }).then(stop => { if (disposed) stop?.(); else unlisten = stop; })
+      .catch(() => { if (!disposed) setLinkError('Could not open the link. You can paste it instead.'); });
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
+  useEffect(() => {
+    let disposed = false; setLoading(true); setError('');
+    void Promise.resolve().then(() => sessionStore().load()).then(value => { if (!disposed) setSession(value); })
+      .catch(() => { if (!disposed) setError('Could not open your saved account. Try again.'); })
+      .finally(() => { if (!disposed) setLoading(false); });
+    return () => { disposed = true; };
+  }, [attempt]);
+  if (loading || error) return <main className="onboarding"><Brand /><section className="panel stack">{error ? <><p role="alert">{error}</p><button onClick={() => setAttempt(value => value + 1)}>Try again</button></> : <p role="status">Opening your account…</p>}</section></main>;
+  if (!session) return <SignInScreen incomingLink={incomingLink} linkError={linkError} onDismissLink={() => setIncomingLink(null)} onSession={async value => { await sessionStore().save(value); setIncomingLink(null); setLinkError(''); setSession(value); }} />;
+  return <Dashboard key={`${session.server}:${session.token}`} session={session} incomingLink={incomingLink} linkError={linkError} onDismissLink={() => setIncomingLink(null)} onSignOut={async () => { await sessionStore().clear(); setSession(null); }} />;
 }
 
-function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
+function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError }: { session: Session; onSignOut: () => Promise<void>; incomingLink: GridLink | null; onDismissLink: () => void; linkError: string }) {
   const api = useMemo(() => new Api(session.server, session.token), [session.server, session.token]);
   const [state, setState] = useState<Snapshot | null>(null);
-  const [section, setSection] = useState<'create' | 'contribute' | 'activity' | 'developer'>('create');
+  const [section, setSection] = useState<'create' | 'contribute' | 'activity' | 'developer' | 'account'>('create');
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [section]);
   const [developerEnabled, setDeveloperEnabled] = useState(storedDeveloperOptions);
   const [developerTarget, setDeveloperTarget] = useState<HTMLDivElement | null>(null);
@@ -64,6 +74,12 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
     return () => window.removeEventListener('keydown', settingsShortcut);
   }, []);
   const localActionPending = useRef(false);
+  const localOperation = useRef<Promise<void> | null>(null);
+  const stopManaged = useRef<(() => Promise<void>) | null>(null);
+  const registerManagedStop = useCallback((stop: (() => Promise<void>) | null) => { stopManaged.current = stop; }, []);
+  const leavingRef = useRef(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState('');
   const jobSync = useRef(initialJobSync());
   const refreshSequence = useRef(0);
   const [error, setError] = useState('');
@@ -85,7 +101,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const request = { revision: jobSync.current.revision, sequence: ++refreshSequence.current };
     let next: Snapshot;
-    try { next = await api.request<Snapshot>('/state', undefined, undefined, signal); }
+    try { next = privateSnapshot(await api.request<Snapshot>('/state', undefined, undefined, signal)); }
     catch (error) { if (!snapshotIsCurrent(jobSync.current, request)) return; throw error; }
     const result = reconcileSnapshot(jobSync.current, request, next);
     if (!result) return;
@@ -94,7 +110,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
     if (seen.current) {
       for (const event of next.events) if (!seen.current.has(event.id)) {
         seen.current.add(event.id);
-        if (notifications.current && shouldNotifyEvent(event, next.user.id)) void notify(event.message).catch(() => {});
+        if (notifications.current && shouldNotifyEvent(event, next.user.id, new Set(next.jobs.map(job => job.id)))) void notify(activityLabel(event)).catch(() => {});
       }
     } else seen.current = new Set(next.events.map(event => event.id));
   }, [api]);
@@ -146,46 +162,82 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   }
   async function action(label: string, work: () => Promise<void>) { setBusy(label); setError(''); try { await work(); await refresh(); } catch (error) { setError(errorMessage(error)); } finally { setBusy(''); } }
   async function startLocal() {
-    if (localActionPending.current) return;
+    if (localActionPending.current || leavingRef.current) return;
     localActionPending.current = true;
     const epoch = ++contributionEpoch.current;
-    try { await action('share', async () => {
+    const operation = (async () => {
+      const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 12000);
+      try {
       if (document.hidden) throw new Error('Bring this window to the foreground first.');
       if (!credential.current) {
-        const result = await api.request<{ device: Device; token: string }>('/devices', { name: deviceName.trim() || 'Browser worker', kind: 'browser', capabilities: ['image_finalize'], limits });
+        const result = await api.request<{ device: Device; token: string }>('/devices', { name: deviceName.trim() || 'Browser worker', kind: 'browser', capabilities: ['image_finalize'], limits }, undefined, controller.signal);
         credential.current = { id: result.device.id, token: result.token };
         localStorage.setItem(credentialKey, JSON.stringify(credential.current)); setLocalId(result.device.id);
       }
       if (contributionEpoch.current !== epoch || document.hidden) return;
-      await api.request(`/devices/${credential.current.id}`, { enabled: true, limits }, 'PATCH');
+      await api.request(`/devices/${credential.current.id}`, { enabled: true, limits }, 'PATCH', controller.signal);
       if (contributionEpoch.current !== epoch || document.hidden) {
-        await api.request(`/devices/${credential.current.id}`, { enabled: false }, 'PATCH');
+        await api.request(`/devices/${credential.current.id}`, { enabled: false }, 'PATCH', controller.signal);
         return;
       }
       worker.current?.stop();
       worker.current = new BrowserWorker(api, credential.current, setWorkerMessage); worker.current.start();
-    }); } finally { localActionPending.current = false; }
+      } finally { clearTimeout(timeout); }
+    })();
+    localOperation.current = operation;
+    try { await action('share', () => operation); } finally { if (localOperation.current === operation) localOperation.current = null; localActionPending.current = false; }
   }
   async function pauseLocal() { contributionEpoch.current += 1; await action('share', async () => { worker.current?.stop(); if (credential.current) await api.request(`/devices/${credential.current.id}`, { enabled: false }, 'PATCH'); setWorkerMessage('Sharing paused. Unfinished work can move to another device.'); }); }
+  async function leaveAccount() {
+    if (leavingRef.current) return;
+    leavingRef.current = true; setLeaving(true); setLeaveError('');
+    contributionEpoch.current += 1; worker.current?.stop();
+    try {
+      await stopAndSignOut({
+        legacy: !!state && state.grid === undefined,
+        stops: [
+          async () => {
+            // Drain any late enable before revoking its credential.
+            await localOperation.current?.catch(() => {});
+            if (credential.current) {
+              const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 4000);
+              try { await api.request(`/devices/${credential.current.id}`, { enabled: false }, 'PATCH', controller.signal); }
+              finally { clearTimeout(timeout); }
+            }
+          },
+          async () => {
+            if (isMacDesktop) {
+              if (!stopManaged.current) throw new Error('Image worker is getting ready.');
+              await stopManaged.current();
+            }
+          },
+        ],
+        revoke: () => signOut(api), clear: onSignOut,
+      });
+    } catch { setLeaveError('Could not finish signing out. Try again.'); }
+    finally { leavingRef.current = false; setLeaving(false); }
+  }
   const localDevice = state?.devices.find(device => device.id === localId);
   const localSharing = isSharing(localDevice, state?.server_time ?? NaN);
-  const titles = { create: 'Create', contribute: 'Contribute', activity: 'Activity', developer: 'Developer options' };
-  return <div className="shell">
+  const titles = { create: 'Create', contribute: 'Contribute', activity: 'Activity', developer: 'Developer options', account: 'Account' };
+  return <>{leaving && <p className="signout-status" role="status">Signing out…</p>}<div className="shell" inert={leaving}>
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark" aria-hidden="true">▦</span> GiPU</div>
+      <Brand />
       <nav aria-label="Main navigation">{(['create', 'contribute', 'activity'] as const).map(item => <button key={item} className={section === item ? 'nav-item selected' : 'nav-item'} aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}><NavIcon name={item} />{titles[item]}</button>)}</nav>
       <button className={`nav-item developer-link ${section === 'developer' ? 'selected' : ''}`} aria-current={section === 'developer' ? 'page' : undefined} onClick={() => setSection('developer')}><NavIcon name="developer" />Developer options</button>
-      <div className="grid-identity"><span className="account-avatar" aria-hidden="true">{session.name.slice(0, 1).toUpperCase()}</span><div><strong>{session.name}</strong><span className="connection-state">{error ? 'Updates interrupted' : state ? 'Connected' : 'Connecting…'}</span></div><button className="subtle" onClick={onSignOut}>Leave grid</button></div>
+      <div className="grid-identity"><span className="account-avatar" aria-hidden="true">{session.name.slice(0, 1).toUpperCase()}</span><div><strong>{session.name}</strong><span className="connection-state">{error ? 'Updates interrupted' : state ? 'Connected' : 'Connecting…'}</span></div><button className="subtle" aria-current={section === 'account' ? 'page' : undefined} onClick={() => setSection('account')}>Account</button></div>
       <small>Sandbox credits · no cash value</small>
     </aside>
     <main className="workspace">
-      <header><span>YOUR WORKSPACE</span><span className="badge">{state ? `${state.devices.filter(d => d.online).length} connected` : 'Connecting…'}</span></header>
-      <div className="intro"><h1>{titles[section]}</h1>{section !== 'developer' && <div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div></div>}</div>
-      {error && <div className="error banner" role="alert">{error}</div>}
+      <header><span>YOUR WORKSPACE</span><span className="badge">{gridCounts(state) ? `${gridCounts(state)!.connected} connected` : state ? 'Grid count unavailable' : 'Connecting…'}</span></header>
+      <div className="intro"><h1>{titles[section]}</h1>{section !== 'developer' && section !== 'account' && <div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div></div>}</div>
+      {incomingLink && <section className="panel stack" aria-label="Switch account"><h2>Use this link?</h2><p className="grid-address">{incomingLink.server}</p><p>Signs out of this account on this device.</p><small>Keep access with a linked device or login.</small><div className="button-row"><button disabled={leaving} onClick={() => void leaveAccount()}>Sign out and continue</button><button className="secondary" disabled={leaving} onClick={onDismissLink}>Cancel</button></div></section>}
+      {linkError && <p className="error" role="alert">{linkError}</p>}
+      {error && <div className="error banner" role="alert">{error}</div>}{leaveError && <div className="error banner" role="alert">{leaveError}</div>}{section === 'account' && <AccountPage api={api} session={session} username={state?.user.username} supported={state ? state.grid !== undefined : undefined} serverTime={state?.server_time} leaving={leaving} onLeave={leaveAccount} />}
       <div hidden={section !== 'create'}><div className="create-layout"><section className="panel compose-panel"><CreateJob api={api} state={state} onCreated={onJobResponse} developerTarget={requestTarget} /></section><GridScene state={state} onOpen={() => setSection('contribute')} /></div></div>
       <div hidden={section !== 'contribute'}>
         <div className={`contribution-layout ${isMacDesktop ? 'with-generation' : ''}`}>
-          {isMacDesktop && <section className="panel contribution-card"><div className="contribution-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="16" rx="3"/><path d="M2 25h28M12 12h8M16 8v8"/></svg></span></div><DesktopWorkerPanel session={session} api={api} devices={state?.devices ?? []} now={state?.server_time ?? NaN} onDeviceIdChange={setManagedId} developerTarget={developerTarget} /></section>}
+          {isMacDesktop && <section className="panel contribution-card"><div className="contribution-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="16" rx="3"/><path d="M2 25h28M12 12h8M16 8v8"/></svg></span></div><DesktopWorkerPanel session={session} api={api} devices={state?.devices ?? []} now={state?.server_time ?? NaN} onDeviceIdChange={setManagedId} developerTarget={developerTarget} onStopReady={registerManagedStop} /></section>}
           <section className="panel contribution-card finish-card">
             <div className="contribution-art finishing-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="6" y="3" width="20" height="26" rx="4"/><path d="m11 16 4 4 7-8"/></svg></span></div>
             <ContributionToggle label="Finish images" status={deviceStatus(localDevice, state?.server_time ?? NaN)} checked={!!localDevice && canPauseDevice(localDevice, state?.server_time ?? NaN)} busy={busy === 'share'} disabled={!!busy || !state} onChange={enabled => { void (enabled ? startLocal() : pauseLocal()); }} />
@@ -195,8 +247,8 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
         </div>
         <div className="contribute-note"><span className="status-pin" aria-hidden="true" /><p>You choose when to share. Switch off to pause.</p></div>
       </div>
-      <section hidden={section !== 'create'} className="panel"><div className="section-title"><h2>Your images</h2><span>Shared with grid members</span></div><div className="jobs">{state?.jobs.some(job => job.owner_id === state.user.id) ? state.jobs.filter(job => job.owner_id === state.user.id).map(job => <JobCard key={job.id} api={api} job={job} own={true} devices={state.devices} now={state.server_time} canStartExport={!localSharing && limits.max_pixels >= job.width * job.height} onStartExport={startLocal} busy={!!busy} onCancel={() => cancelJob(job.id)} />) : <p className="empty">Your next image starts with a prompt.</p>}</div></section>
-      <div hidden={section !== 'activity'}><section className="panel section-title"><div><h2>Notifications</h2><p>Know when your image is ready.</p></div><button className="secondary" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears here.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button></section><div className="main-grid"><section className="panel"><h2>Recent activity</h2><div className="events" aria-live="polite">{state?.events.length ? state.events.slice(0, 30).map(event => <div className="event" key={event.id}><time>{displayTime(event.created_at)}</time><span>{event.message}</span></div>) : <p className="empty">Your activity will appear here.</p>}</div></section><section className="panel"><h2>Your credits</h2><div className="events">{state?.ledger.length ? state.ledger.slice(0, 30).map(row => <div className="ledger-row" key={row.id}><div><span>{row.note || row.kind.replaceAll('_', ' ')}</span><small>{displayTime(row.created_at)}</small></div><strong className={row.amount > 0 ? 'positive' : ''}>{row.amount > 0 ? '+' : ''}{row.amount}</strong></div>) : <p className="empty">Payments and refunds will appear here.</p>}</div></section></div></div>
+      <section hidden={section !== 'create'} className="panel"><div className="section-title"><h2>Your images</h2></div><div className="jobs">{state?.jobs.some(job => job.owner_id === state.user.id) ? state.jobs.filter(job => job.owner_id === state.user.id).map(job => <JobCard key={job.id} api={api} job={job} own={true} devices={state.devices} now={state.server_time} canStartExport={!localSharing && limits.max_pixels >= job.width * job.height} onStartExport={startLocal} busy={!!busy} onCancel={() => cancelJob(job.id)} />) : <p className="empty">Your next image starts with a prompt.</p>}</div></section>
+      <div hidden={section !== 'activity'}><section className="panel section-title"><div><h2>Notifications</h2><p>Know when your image is ready.</p></div><button className="secondary" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears here.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button></section><div className="main-grid"><section className="panel"><h2>Recent activity</h2><div className="events" aria-live="polite">{state?.events.length ? state.events.slice(0, 30).map(event => <div className="event" key={event.id}><time>{displayTime(event.created_at)}</time><span>{activityLabel(event)}</span></div>) : <p className="empty">Your activity will appear here.</p>}</div></section><section className="panel"><h2>Your credits</h2><div className="events">{state?.ledger.length ? state.ledger.slice(0, 30).map(row => <div className="ledger-row" key={row.id}><div><span>{creditLabel(row.kind)}</span><small>{displayTime(row.created_at)}</small></div><strong className={row.amount > 0 ? 'positive' : ''}>{row.amount > 0 ? '+' : ''}{row.amount}</strong></div>) : <p className="empty">Payments and refunds will appear here.</p>}</div></section></div></div>
       <div hidden={section !== 'developer'} className="developer-page">
         <section className="panel stack"><ContributionToggle label="Developer options" status={developerEnabled ? 'On for this device' : 'Off'} checked={developerEnabled} onChange={changeDeveloperOptions} /><p>Advanced controls and diagnostics. Sharing stays unchanged.</p></section>
         {developerEnabled && <div className="developer-content">
@@ -209,7 +261,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
         </div>}
       </div>
     </main>
-  </div>;
+  </div></>;
 
 }
 
@@ -251,8 +303,10 @@ function DeviceCard({ device, now, own, local, busy, onUpdate }: { device: Devic
 }
 
 function JobCard({ api, job, devices, now, canStartExport, onStartExport, own, busy, onCancel }: { api: Api; job: Job; devices: Device[]; now: number; canStartExport: boolean; onStartExport: () => Promise<void>; own: boolean; busy: boolean; onCancel: () => Promise<void> }) {
-  const images = job.images.filter(image => image.stage.includes('final') || !job.images.some(other => other.variant === image.variant && other.stage.includes('final')));
+  const images = visibleImages(job.images);
   const progress = jobProgress(job, devices, now);
+  const queued = ['queued', 'running'].includes(job.status) && !job.tasks.some(task => task.status === 'running');
+  if (queued) { progress.title = progress.waitingForExport ? 'Waiting to finish' : 'Waiting to create'; progress.detail = 'Waiting for a compatible device.'; }
   return <article className="job">
     <div className="section-title"><h3>{job.prompt}</h3><span className={`badge ${job.status === 'completed' ? 'good' : ''}`}>{job.status}</span></div>
     <div className="job-progress">
@@ -261,7 +315,7 @@ function JobCard({ api, job, devices, now, canStartExport, onStartExport, own, b
       {progress.waitingForExport && canStartExport && <><button className="secondary" disabled={busy} onClick={() => void onStartExport()}>Turn on Finish images</button><small>Keep this window open. Turn off in Contribute to pause.</small></>}
     </div>
 
-    {images.length > 0 && <div className="gallery">{images.map(image => <ImageCard key={image.task_id} api={api} path={image.url} title={`Image ${image.variant + 1}`} stage={image.stage} />)}</div>}
+    {images.length > 0 && <div className="gallery">{images.map(image => <ImageCard key={image.task_id} api={api} path={image.url} title={`Image ${image.variant + 1}`} verified={image.verified} />)}</div>}
 
 
     {job.receipt ? <details className="receipt-details"><summary>Receipt · {job.receipt.total_charged} credits</summary><div className="receipt"><span>Reserved {job.receipt.budget}</span><span>Contributors {job.receipt.contributor_total}</span><span>Service fee {job.receipt.platform_fee}</span><span>Refund {job.receipt.refund}</span><strong>Charged {job.receipt.total_charged}</strong></div></details> : <p className="muted">Budget {job.budget} · still reserved {job.reserved} · accepted work paid {job.spent} · returned {job.refunded}</p>}
@@ -270,7 +324,7 @@ function JobCard({ api, job, devices, now, canStartExport, onStartExport, own, b
 }
 
 function JobDiagnostics({ job, devices }: { job: Job; devices: Device[] }) {
-  return <article className="job"><h3>{job.prompt}</h3>    <details><summary>Plan details</summary><p>{job.plan.explanation}</p></details>
+  return <article className="job"><h3>{job.prompt}</h3>    <details><summary>Plan details</summary><p>{job.plan.mode === 'manual' ? 'Direct queue' : 'Planner routing'}</p></details>
     <details><summary>Devices & steps</summary><div className="task-list">{job.tasks.map(task => <div key={task.id} className="task"><div><span>{task.kind === 'image_generate' ? 'Generate' : 'Export'} image {task.variant + 1}</span><small>{task.device_id ? devices.find(device => device.id === task.device_id)?.name || 'Assigned device' : task.status === 'queued' ? 'Awaiting assignment' : 'No active assignment'}{task.attempts > 1 ? ` · attempt ${task.attempts}` : ''}</small></div><span className="muted">{task.status === 'running' ? `${Math.round((task.progress || 0) * 100)}%` : task.status}</span></div>)}</div></details></article>;
 }
 
@@ -278,7 +332,7 @@ function NavIcon({ name }: { name: 'create' | 'contribute' | 'activity' | 'devel
   return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{name === 'create' ? <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></> : name === 'contribute' ? <><rect x="3" y="4" width="13" height="10" rx="2" /><path d="M1 18h13" /><rect x="17" y="10" width="5" height="10" rx="1" /></> : name === 'activity' ? <><path d="M3 12h4l3-7 4 14 3-7h4" /></> : <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>}</svg>;
 }
 
-function ImageCard({ api, path, title, stage }: { api: Api; path: string; title: string; stage: string }) {
+function ImageCard({ api, path, title, verified }: { api: Api; path: string; title: string; verified?: boolean }) {
   const [url, setUrl] = useState(''); const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [saveReady, setSaveReady] = useState(!isMacDesktop);
@@ -292,5 +346,5 @@ function ImageCard({ api, path, title, stage }: { api: Api; path: string; title:
     return () => { disposed = true; unlisten?.(); };
   }, [url]);
   useEffect(() => { const controller = new AbortController(); let objectUrl = ''; setUrl(''); setError(''); void api.image(path, controller.signal).then(blob => { if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } }).catch(error => { if (!controller.signal.aborted) setError(errorMessage(error)); }); return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); }; }, [api, path]);
-  return <figure>{url ? <a href={url} onClick={event => { if (!saveReady) { event.preventDefault(); return; } if (isMacDesktop) setSaveMessage('Saving…'); }} aria-label={`Save ${title}`} download={`gipu-${title.replaceAll(' ', '-').toLowerCase()}.png`}><img src={url} alt={`${title}, locally generated`} width="256" height="256" /></a> : <div className="image-placeholder">{error || 'Loading image…'}</div>}<figcaption>{title} · {stage.includes('final') ? 'Ready' : 'Preview'}{url && ' · Save image'}</figcaption>{saveMessage && <small role="status">{saveMessage}</small>}</figure>;
+  return <figure className={verified === false ? 'image-verifying' : undefined} aria-busy={verified === false}>{url ? <a href={url} onClick={event => { if (!saveReady) { event.preventDefault(); return; } if (isMacDesktop) setSaveMessage('Saving…'); }} aria-label={`Save ${title}`} download={`gipu-${title.replaceAll(' ', '-').toLowerCase()}.png`}><img src={url} alt={`${title}, locally generated`} width="256" height="256" /></a> : <div className="image-placeholder">{error || 'Loading image…'}</div>}<figcaption>{title} · {imageLabel({ verified })}{url && ' · Save image'}</figcaption>{saveMessage && <small role="status">{saveMessage}</small>}</figure>;
 }

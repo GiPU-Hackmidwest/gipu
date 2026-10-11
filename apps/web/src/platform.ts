@@ -5,5 +5,6 @@ export function platformFlags(tauri: boolean, platform: string | undefined, user
   const isMobileApp = tauri && mobile;
   const isDesktop = tauri && !mobile;
   const mac = platform ? platform === 'darwin' || platform === 'macos' : /Macintosh|Mac OS X/.test(userAgent);
-  return { isTauri: tauri, isMobileApp, isDesktop, isMacDesktop: isDesktop && mac };
+  const android = platform ? ['android', 'androideabi'].includes(platform) : /Android/.test(userAgent);
+  return { isAndroidApp: tauri && android, isTauri: tauri, isMobileApp, isDesktop, isMacDesktop: isDesktop && mac };
 }

@@ -1,4 +1,7 @@
 import SwiftUI
+import VisionKit
+import AVFoundation
+import CoreImage.CIFilterBuiltins
 
 private enum GridStyle {
     static let orange = Color(red: 195.0 / 255, green: 68.0 / 255, blue: 0)
@@ -146,21 +149,15 @@ private struct DeviceHandoff: View {
                     .background { ClaySurface(shape: RoundedRectangle(cornerRadius: 38, style: .continuous), recessed: true, color: GridStyle.background) }
             }
         }.padding(.vertical, 8)
+        Text(grid.snapshot?.grid.map { "\($0.connected) connected" } ?? "Grid counts unavailable")
+            .font(.caption).foregroundStyle(GridStyle.muted)
     }
 
     private func availability(_ kind: String) -> String {
-        guard let snapshot = grid.snapshot, let now = snapshot.server_time else { return "Checking…" }
-        let compatible = snapshot.devices.filter {
-            $0.online && $0.enabled && ($0.session_expires_at ?? 0) > now &&
-            $0.capabilities?.contains(kind) == true && $0.limits.max_pixels >= 65536
-        }
-        let ready = compatible.filter { $0.active_task_id == nil }.count
-        if ready > 0 { return "\(ready) ready" }
-        if snapshot.devices.contains(where: { $0.online && $0.enabled && ($0.capabilities == nil || $0.session_expires_at == nil) }) {
-            return "Checking…"
-        }
-        return compatible.isEmpty ? "None ready" : "Busy"
+        guard let counts = grid.snapshot?.grid else { return "Unavailable" }
+        return "\(kind == "image_generate" ? counts.ready_to_create : counts.ready_to_finish) ready"
     }
+
 }
 
 struct ContentView: View {
@@ -177,6 +174,10 @@ struct ContentView: View {
         }
         .foregroundStyle(GridStyle.ink)
         .tint(GridStyle.ink)
+        .onOpenURL { grid.receiveLink($0.absoluteString) }
+        .sheet(item: $grid.pendingLink) { link in
+            LinkConfirmationView(link: link)
+        }
         .alert("GiPU", isPresented: Binding(get: { grid.error != nil }, set: { if !$0 { grid.error = nil } })) {
             Button("OK") { grid.error = nil }
         } message: { Text(grid.error ?? "") }
@@ -185,30 +186,62 @@ struct ContentView: View {
 
 private struct JoinView: View {
     @EnvironmentObject private var grid: GridModel
+    @State private var scanner = false
+    @State private var scannedPayload: String?
+    @State private var method = "New account"
+    @State private var username = ""
+    @State private var password = ""
+    @State private var code = ""
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 30) {
-                    HStack(spacing: 14) {
-                        DeviceTile(symbol: "laptopcomputer", name: "Create", status: "On a laptop")
-                        DeviceTile(symbol: "iphone", name: "Finish", status: "With a little help")
-                    }.padding(.vertical, 24)
-                    VStack(alignment: .leading, spacing: 22) {
-                        Text("Join the grid").font(.title2.weight(.medium))
-                        TextField("Your name", text: $grid.name).textContentType(.name)
-                        Divider()
-                        SecureField("Join code", text: $grid.joinCode).textInputAutocapitalization(.never)
-                        DisclosureGroup("Grid address") {
-                            TextField("https://…", text: $grid.server).textContentType(.URL).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().padding(.top, 10)
+                VStack(spacing: 28) {
+                    Image("GiPUMark").resizable().scaledToFit().frame(width: 100, height: 100)
+                        .padding(36)
+                        .padding(.vertical, 24).accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 20) {
+                        Text("Bring your account along").font(.title2.weight(.medium))
+                        Button { scanner = true } label: { Label("Scan QR", systemImage: "qrcode.viewfinder") }
+                            .buttonStyle(GridPrimaryButton()).disabled(grid.busy)
+                        Text("Scan Link QR on your other device.").font(.caption).foregroundStyle(GridStyle.muted)
+                        DisclosureGroup("Sign in another way") {
+                            VStack(spacing: 18) {
+                                Picker("Sign-in method", selection: $method) {
+                                    Text("Link code").tag("Link code")
+                                    Text("Password").tag("Password")
+                                    Text("New account").tag("New account")
+                                }
+                                TextField("Grid address", text: $grid.server).keyboardType(.URL)
+                                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                                if method == "Password" {
+                                    TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                                    SecureField("Password", text: $password).textContentType(.password)
+                                } else if method == "Link code" {
+                                    TextField("10-character code", text: $code).textInputAutocapitalization(.characters).autocorrectionDisabled()
+                                } else {
+                                    TextField("Your name", text: $grid.name).textContentType(.name)
+                                    SecureField("Join code", text: $grid.joinCode).textInputAutocapitalization(.never)
+                                    Text("Creates a new credit account.").font(.caption).foregroundStyle(GridStyle.muted)
+                                }
+                                Button {
+                                    Task {
+                                        if method == "Password" { await grid.login(username: username, password: password); password = "" }
+                                        else if method == "Link code" { await grid.redeem(code: code); code = "" }
+                                        else { await grid.join() }
+                                    }
+                                } label: {
+                                    HStack { Text(method == "New account" ? "Create account" : "Sign in"); if grid.busy { ProgressView() } }
+                                }.buttonStyle(GridPrimaryButton()).disabled(grid.busy)
+                            }.padding(.top, 16)
                         }.font(.subheadline)
-                        Button { Task { await grid.join() } } label: {
-                            HStack { Text("Join grid"); if grid.busy { ProgressView() } }
-                        }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Text("Sharing starts only when you choose.").font(.caption).foregroundStyle(GridStyle.muted)
                     }.gridPanel()
-                }.padding(24).frame(maxWidth: 580)
-                    .frame(maxWidth: .infinity)
+                }.padding(24).frame(maxWidth: 580).frame(maxWidth: .infinity)
             }.background(GridStyle.background).navigationTitle("GiPU").navigationBarTitleDisplayMode(.inline)
+                .sheet(isPresented: $scanner, onDismiss: {
+                    if let payload = scannedPayload { scannedPayload = nil; grid.receiveLink(payload) }
+                }) {
+                    QRScannerSheet { value in scannedPayload = value; scanner = false }
+                }
         }
     }
 }
@@ -281,7 +314,7 @@ private struct JobCard: View {
             Text(job.prompt).font(.headline)
             Text(job.statusLabel).font(.caption.weight(.medium)).foregroundStyle(GridStyle.muted)
             JobProgressView(job: job)
-            ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant) }
+            ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant, verified: item.verified) }
             if let receipt = job.receipt {
                 DisclosureGroup("Receipt · \(receipt.total_charged) credits") {
                     VStack(spacing: 10) {
@@ -328,7 +361,13 @@ private struct JobProgressView: View {
         }
     }
     private func stage(_ title: String, kind: String, completed: Int) -> some View {
-        let state = job.stageState(kind, devices: grid.snapshot?.devices ?? [], serverTime: grid.snapshot?.server_time)
+        let observed = job.stageState(kind, devices: [], serverTime: grid.snapshot?.server_time)
+        let state: JobStageState
+        if [.ready, .busy, .unavailable, .unknown].contains(observed) {
+            if let counts = grid.snapshot?.grid {
+                state = (kind == "image_generate" ? counts.ready_to_create : counts.ready_to_finish) > 0 ? .ready : .unavailable
+            } else { state = .unknown }
+        } else { state = observed }
         return VStack(alignment: .leading, spacing: 3) {
             Text("\(title) · \(completed)/\(job.imageCount)").font(.subheadline.weight(.medium))
             Text(stageMessage(state, kind: kind)).font(.caption).foregroundStyle(GridStyle.muted)
@@ -355,15 +394,19 @@ private struct ProtectedImage: View {
     let path: String
     let stage: String
     let variant: Int
+    let verified: Bool?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var image: UIImage?
     @State private var failed = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 340)
-                    .clipShape(RoundedRectangle(cornerRadius: 24)).accessibilityLabel("Image \(variant + 1), \(stageLabel)")
+                    .overlay {
+                        if verified == false { VerificationShimmer(reduceMotion: reduceMotion) }
+                    }.clipShape(RoundedRectangle(cornerRadius: 24)).accessibilityLabel("Image \(variant + 1), \(stageLabel)")
                 ShareLink(item: Image(uiImage: image), preview: SharePreview("GiPU · image \(variant + 1)", image: Image(uiImage: image))) {
-                    Label(stage == "image_finalize" ? "Share image" : "Share preview", systemImage: "square.and.arrow.up")
+                    Label(verified == true || (verified == nil && stage == "image_finalize") ? "Share image" : "Share preview", systemImage: "square.and.arrow.up")
                 }.buttonStyle(.bordered).controlSize(.large)
             } else if failed { Label("Image unavailable", systemImage: "photo.badge.exclamationmark") }
             else { ProgressView() }
@@ -373,7 +416,11 @@ private struct ProtectedImage: View {
             catch { failed = true }
         }
     }
-    private var stageLabel: String { stage == "image_finalize" ? "Ready" : "Unfinished preview" }
+    private var stageLabel: String {
+        if verified == true { return "Verified" }
+        if verified == false { return "Verifying…" }
+        return stage == "image_finalize" ? "Ready" : "Preview"
+    }
 }
 
 private struct SessionDial: View {
@@ -468,6 +515,7 @@ private struct ActivityView: View {
                 Section {
                     Text(grid.snapshot?.user.name ?? "Connecting")
                     Button { Task { await grid.enableNotifications() } } label: { LabeledContent("Notifications", value: grid.notificationStatus) }
+                    NavigationLink { AccountView() } label: { Label("Account", systemImage: "person.crop.circle") }
                     NavigationLink {
                         DeveloperOptionsView()
                     } label: {
@@ -475,15 +523,15 @@ private struct ActivityView: View {
                     }
                 }
                 Section("Activity") {
-                    if grid.snapshot?.events.isEmpty == true { Text("Nothing yet").foregroundStyle(GridStyle.muted) }
-                    ForEach(grid.snapshot?.events ?? []) { event in
+                    if grid.snapshot?.ownEvents.isEmpty == true { Text("Nothing yet").foregroundStyle(GridStyle.muted) }
+                    ForEach(grid.snapshot?.ownEvents ?? []) { event in
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(event.message)
+                            Text(event.safeMessage ?? "Activity updated")
                             Text(Date(timeIntervalSince1970: event.created_at), style: .time).font(.caption).foregroundStyle(GridStyle.muted)
                         }
                     }
                 }
-                Section { Button("Disconnect this phone", role: .destructive) { Task { await grid.disconnect() } } }
+                Section { Button("Sign out", role: .destructive) { Task { await grid.disconnect() } }.disabled(grid.busy) }
             }.navigationTitle("Activity").navigationBarTitleDisplayMode(.inline)
                 .scrollContentBackground(.hidden).background(GridStyle.background).refreshable { await grid.refresh() }
         }
@@ -529,7 +577,7 @@ private struct DeveloperOptionsView: View {
                     Text("Applies to new requests while Developer options is on.")
                 }
                 Section("Device details") {
-                    ForEach(grid.snapshot?.devices ?? []) { device in
+                    ForEach(grid.snapshot?.ownDevices ?? []) { device in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(device.name)
                             Text(sharingStatus(device)).font(.caption).foregroundStyle(GridStyle.muted)
@@ -547,7 +595,7 @@ private struct DeveloperOptionsView: View {
                             ForEach(job.tasks) { task in
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("\(task.kind == "image_generate" ? "Create" : "Finish") · image \(task.variant + 1)")
-                                    Text("\(task.device_id.flatMap { id in grid.snapshot?.devices.first { $0.id == id }?.name } ?? "Awaiting device") · \(task.status)")
+                                    Text("\(task.device_id.flatMap { id in grid.snapshot?.ownDevices.first { $0.id == id }?.name } ?? deviceLabel(task.device_kind)) · \(task.status)")
                                         .font(.caption).foregroundStyle(GridStyle.muted)
                                 }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
                             }
@@ -562,10 +610,206 @@ private struct DeveloperOptionsView: View {
             .scrollContentBackground(.hidden).background(GridStyle.background)
     }
 
+    private func deviceLabel(_ kind: String?) -> String {
+        switch kind { case "python": return "A grid laptop"; case "ios": return "A grid phone"; case "browser": return "A grid device"; default: return "Awaiting device" }
+    }
+
     private func sharingStatus(_ device: Device) -> String {
         guard device.online else { return "Offline" }
         guard device.enabled else { return "Connected · paused" }
         guard let now = grid.snapshot?.server_time, let expiry = device.session_expires_at else { return "Checking session…" }
         return expiry > now ? (device.active_task_id == nil ? "Sharing · ready" : "Sharing · working") : "Connected · session ended"
+    }
+}
+
+private struct LinkConfirmationView: View {
+    @EnvironmentObject private var grid: GridModel
+    @Environment(\.dismiss) private var dismiss
+    let link: GridLink
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                Image(systemName: "qrcode").font(.system(size: 64)).accessibilityHidden(true)
+                Text(grid.connected ? "Switch account?" : (link.kind == .link ? "Link this phone?" : "Create an account?"))
+                    .font(.title2.weight(.medium))
+                Text(link.server).font(.subheadline).multilineTextAlignment(.center)
+                Text(link.kind == .link ? "Keep the same account and credits." : "This invite creates a new credit account.")
+                    .font(.subheadline).foregroundStyle(GridStyle.muted)
+                if grid.connected { Text("Current sharing will stop.").font(.caption).foregroundStyle(GridStyle.muted) }
+                Button {
+                    dismiss()
+                    Task { await grid.acceptLink(link) }
+                } label: { Text(grid.connected ? "Switch account" : "Continue") }
+                    .buttonStyle(GridPrimaryButton()).disabled(grid.busy)
+                Button("Cancel") { grid.pendingLink = nil; dismiss() }.frame(minHeight: 44)
+            }.padding(28).frame(maxWidth: 520).frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(GridStyle.background)
+        }.presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+    }
+}
+
+private struct AccountView: View {
+    @EnvironmentObject private var grid: GridModel
+    @State private var linkCode: LinkCode?
+    @State private var working = false
+    @State private var message: String?
+    @State private var scanner = false
+    @State private var scannedPayload: String?
+    @State private var username = ""
+    @State private var password = ""
+    @State private var currentPassword = ""
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 20) {
+                    Text(grid.snapshot?.user.name ?? "Your account").font(.title2.weight(.medium))
+                    Text("Link a device or add a login to keep your credits.").font(.subheadline).foregroundStyle(GridStyle.muted)
+                    if let linkCode {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            if linkCode.expires_at > context.date.timeIntervalSince1970 {
+                                let payload = GridLink(kind: .link, server: grid.server, code: linkCode.code).payload
+                                VStack(spacing: 16) {
+                                    if let image = qrImage(payload) {
+                                        Image(uiImage: image).interpolation(.none).resizable().scaledToFit()
+                                            .frame(maxWidth: 240).padding(16).background(.white, in: RoundedRectangle(cornerRadius: 24))
+                                            .accessibilityLabel("Link QR. Scan from your other device to use this account.")
+                                    }
+                                    Text(linkCode.code).font(.title3.monospaced().weight(.medium)).textSelection(.enabled)
+                                    Text("Expires in \(Int(linkCode.expires_at - context.date.timeIntervalSince1970)) sec")
+                                        .font(.caption).foregroundStyle(GridStyle.muted)
+                                }.frame(maxWidth: .infinity)
+                            } else { Text("Code expired").foregroundStyle(GridStyle.muted) }
+                        }
+                    }
+                    Button {
+                        working = true; message = nil
+                        Task {
+                            defer { working = false }
+                            do { linkCode = try await grid.createLinkCode() }
+                            catch { message = GridModel.identityError(error) }
+                        }
+                    } label: { HStack { Text(linkCode == nil ? "Link a device" : "New code"); if working { ProgressView() } } }
+                        .buttonStyle(GridPrimaryButton()).disabled(working || grid.busy)
+                    Button { scanner = true } label: { Label("Scan another account", systemImage: "qrcode.viewfinder") }
+                        .frame(minHeight: 44).disabled(working || grid.busy)
+                }.gridPanel()
+                VStack(alignment: .leading, spacing: 18) {
+                    DisclosureGroup(grid.snapshot?.user.username == nil ? "Add a login" : "Change login") {
+                        VStack(spacing: 16) {
+                            TextField("Username", text: $username).textContentType(.username).textInputAutocapitalization(.never).autocorrectionDisabled()
+                            if grid.snapshot?.user.username != nil {
+                                SecureField("Current password", text: $currentPassword).textContentType(.password)
+                            }
+                            SecureField("New password", text: $password).textContentType(.newPassword)
+                            Text("Username: 3–40 letters, numbers, . _ -\nPassword: 8–200 characters").font(.caption).foregroundStyle(GridStyle.muted)
+                            Button("Save login") {
+                                working = true; message = nil
+                                Task {
+                                    defer { working = false; password = ""; currentPassword = "" }
+                                    do {
+                                        try await grid.addLogin(username: username, password: password, currentPassword: currentPassword)
+                                        message = "Login saved"
+                                    } catch { message = GridModel.identityError(error) }
+                                }
+                            }.buttonStyle(GridPrimaryButton())
+                                .disabled(working || grid.busy || username.count < 3 || username.count > 40 || password.count < 8 || password.count > 200)
+                        }.padding(.top, 18)
+                    }
+                }.gridPanel()
+                if let message { Text(message).font(.footnote).foregroundStyle(GridStyle.muted) }
+            }.padding(24).frame(maxWidth: 580).frame(maxWidth: .infinity)
+        }.background(GridStyle.background).navigationTitle("Account").navigationBarTitleDisplayMode(.inline)
+            .onAppear { username = grid.snapshot?.user.username ?? "" }
+            .onDisappear { linkCode = nil; password = ""; currentPassword = "" }
+            .sheet(isPresented: $scanner, onDismiss: {
+                if let payload = scannedPayload { scannedPayload = nil; grid.receiveLink(payload) }
+            }) {
+                QRScannerSheet { value in scannedPayload = value; scanner = false }
+            }
+    }
+    private func qrImage(_ payload: String) -> UIImage? {
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(payload.utf8); filter.correctionLevel = "M"
+        guard let output = filter.outputImage?.transformed(by: CGAffineTransform(scaleX: 8, y: 8)),
+              let cg = CIContext().createCGImage(output, from: output.extent) else { return nil }
+        return UIImage(cgImage: cg)
+    }
+}
+
+private struct QRScannerSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let onScan: (String) -> Void
+    @State private var checking = true
+    @State private var ready = false
+    @State private var scannerFailed = false
+    var body: some View {
+        NavigationStack {
+            Group {
+                if checking { ProgressView() }
+                else if ready && !scannerFailed {
+                    NativeQRScanner(onScan: onScan, onFailure: { scannerFailed = true })
+                } else {
+                    ContentUnavailableView("Camera unavailable", systemImage: "camera", description: Text("Use a link code under Sign in another way."))
+                }
+            }.navigationTitle("Scan QR").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
+        }.task {
+            let allowed = await AVCaptureDevice.requestAccess(for: .video)
+            ready = allowed && DataScannerViewController.isSupported && DataScannerViewController.isAvailable
+            checking = false
+        }
+    }
+}
+
+private struct NativeQRScanner: UIViewControllerRepresentable {
+    let onScan: (String) -> Void
+    let onFailure: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(onScan: onScan, onFailure: onFailure) }
+    func makeUIViewController(context: Context) -> DataScannerViewController {
+        let scanner = DataScannerViewController(recognizedDataTypes: [.barcode(symbologies: [.qr])],
+                                                qualityLevel: .balanced, recognizesMultipleItems: false,
+                                                isHighFrameRateTrackingEnabled: false, isPinchToZoomEnabled: true,
+                                                isGuidanceEnabled: true, isHighlightingEnabled: true)
+        scanner.delegate = context.coordinator
+        return scanner
+    }
+    func updateUIViewController(_ scanner: DataScannerViewController, context: Context) {
+        guard !scanner.isScanning, !context.coordinator.delivered else { return }
+        do { try scanner.startScanning() } catch { DispatchQueue.main.async { onFailure() } }
+    }
+    static func dismantleUIViewController(_ scanner: DataScannerViewController, coordinator: Coordinator) { scanner.stopScanning() }
+    final class Coordinator: NSObject, DataScannerViewControllerDelegate {
+        let onScan: (String) -> Void
+        let onFailure: () -> Void
+        var delivered = false
+        init(onScan: @escaping (String) -> Void, onFailure: @escaping () -> Void) { self.onScan = onScan; self.onFailure = onFailure }
+        func dataScanner(_ dataScanner: DataScannerViewController, didAdd addedItems: [RecognizedItem], allItems: [RecognizedItem]) {
+            guard !delivered else { return }
+            for item in addedItems {
+                if case let .barcode(barcode) = item, let payload = barcode.payloadStringValue {
+                    delivered = true; dataScanner.stopScanning(); onScan(payload); return
+                }
+            }
+        }
+        func dataScanner(_ dataScanner: DataScannerViewController, becameUnavailableWithError error: DataScannerViewController.ScanningUnavailable) { onFailure() }
+    }
+}
+
+private struct VerificationShimmer: View {
+    let reduceMotion: Bool
+    var body: some View {
+        Group {
+            if reduceMotion { Color.white.opacity(0.12) }
+            else {
+                TimelineView(.animation(minimumInterval: 1.0 / 20)) { context in
+                    GeometryReader { geometry in
+                        let phase = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 2) / 2
+                        LinearGradient(colors: [.clear, .white.opacity(0.35), .clear], startPoint: .leading, endPoint: .trailing)
+                            .frame(width: geometry.size.width * 0.5)
+                            .offset(x: geometry.size.width * (phase * 1.5 - 0.5))
+                    }
+                }
+            }
+        }.allowsHitTesting(false).accessibilityHidden(true)
     }
 }

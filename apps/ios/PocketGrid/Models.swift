@@ -1,7 +1,10 @@
 import Foundation
 
-struct GridUser: Decodable { let id: String; let name: String }
-struct SessionReply: Decodable { let token: String; let user: GridUser; let balance: Int }
+struct GridUser: Decodable { let id: String; let name: String; var username: String? = nil }
+struct SessionReply: Decodable { let token: String; let user: GridUser; let balance: Int; var session_id: String? = nil }
+struct LinkCode: Decodable { let code: String; let expires_at: Double }
+struct LoginReply: Decodable { let username: String }
+struct GridCounts: Decodable { let connected: Int; let ready_to_create: Int; let ready_to_finish: Int }
 struct Limits: Codable, Equatable {
     var cpu_threads: Int = 1
     var max_pixels: Int = 262144
@@ -20,11 +23,13 @@ struct ClaimReply: Decodable { let task: GridTask?; let device: Device }
 struct GridTask: Decodable, Identifiable {
     let id: String; let job_id: String; let kind: String; let status: String; let variant: Int
     var device_id: String? = nil
+    var device_kind: String? = nil
     let width: Int; let height: Int; let price: Int; let lease_id: String?; let source_url: String?; let progress: Double
 }
 struct JobImage: Decodable, Identifiable {
     var id: String { task_id + stage }
     let task_id: String; let url: String; let variant: Int; let stage: String
+    var verified: Bool? = nil
 }
 struct Receipt: Decodable {
     let budget: Int; let contributor_total: Int; let platform_fee: Int; let refund: Int; let total_charged: Int
@@ -43,6 +48,39 @@ struct GridJob: Decodable, Identifiable {
 struct GridEvent: Decodable, Identifiable {
     let id: Int; let kind: String; let message: String; let created_at: Double; let device_id: String?
     let user_id: String?
+    var job_id: String? = nil
+
+    var safeMessage: String? {
+        switch kind {
+        case "job_planning": return "Planning your image"
+        case "job_created": return "Image requested"
+        case "task_started": return "Work started"
+        case "credits_earned": return "Credits earned"
+        case "task_reassigned": return "Work reassigned"
+        case "job_completed": return "Your images are ready"
+        case "job_failed": return "Image request failed"
+        case "job_cancelled": return "Image request cancelled"
+        case "device_paused": return "Sharing paused"
+        case "routing_applied", "routing_updated": return "Device selection updated"
+        case "agent_reviewed", "agent_review_failed": return "Request reviewed"
+        default: return nil
+        }
+    }
+
+    func isVisible(userID: String, ownJobs: Set<String>, ownDevices: Set<String>) -> Bool {
+        guard !userID.isEmpty, safeMessage != nil else { return false }
+        if kind == "credits_earned" { return user_id == userID }
+        let ownsAccountOrJob = user_id == userID || job_id.map { ownJobs.contains($0) } == true
+        if ["job_planning", "job_created", "job_completed", "job_failed", "job_cancelled"].contains(kind) {
+            return ownsAccountOrJob
+        }
+        return ownsAccountOrJob || device_id.map { ownDevices.contains($0) } == true
+    }
+
+    func shouldNotifyScoped(userID: String, deviceID: String, ownJobs: Set<String>, ownDevices: Set<String>) -> Bool {
+        guard isVisible(userID: userID, ownJobs: ownJobs, ownDevices: ownDevices) else { return false }
+        return kind == "job_completed" || shouldNotify(userID: userID, deviceID: deviceID)
+    }
 
     func shouldNotify(userID: String, deviceID: String) -> Bool {
         guard ["task_started", "credits_earned", "job_completed"].contains(kind),
@@ -57,6 +95,14 @@ struct Snapshot: Decodable {
     let user: GridUser; let balance: Int; let reserved: Int; let earned: Int
     let devices: [Device]; let jobs: [GridJob]; let events: [GridEvent]; let agent: AgentStatus
     let server_time: Double?
+    var grid: GridCounts? = nil
+
+    var ownDevices: [Device] { devices.filter { $0.owner_id == user.id } }
+    var ownJobs: [GridJob] { jobs.filter { $0.owner_id == user.id } }
+    var ownEvents: [GridEvent] {
+        let jobs = Set(ownJobs.map(\.id)), devices = Set(ownDevices.map(\.id))
+        return events.filter { $0.isVisible(userID: user.id, ownJobs: jobs, ownDevices: devices) }
+    }
 }
 
 /// Describes observed queue capacity, not a guarantee of the next assignment.
@@ -177,6 +223,7 @@ extension GridJob {
     var displayImages: [JobImage] {
         let grouped = Dictionary(grouping: images, by: \.variant)
         let selected: [JobImage] = grouped.values.compactMap { variants in
+            if let verified = variants.first(where: { $0.verified == true }) { return verified }
             if let finished = variants.first(where: { $0.stage == "image_finalize" }) { return finished }
             if let generated = variants.first(where: { $0.stage == "image_generate" }) { return generated }
             return variants.first
@@ -246,7 +293,7 @@ struct GridAPI {
     private static let session = URLSession(configuration: .ephemeral)
     func data(_ path: String, token: String?, method: String = "GET", body: [String: Any]? = nil) async throws -> Data {
         guard let base = URL(string: server), let scheme = base.scheme,
-              ["http", "https"].contains(scheme), base.host != nil,
+              ["http", "https"].contains(scheme.lowercased()), base.host != nil,
               let url = URL(string: path, relativeTo: base)?.absoluteURL,
               url.host == base.host, url.scheme == base.scheme, url.port == base.port else { throw APIError.invalidURL }
         var request = URLRequest(url: url)
@@ -293,4 +340,46 @@ struct ContributionGate {
     mutating func finishPause() { pauses -= 1 }
     mutating func invalidate() { generation += 1 }
     func permits(_ ticket: Int, foreground: Bool) -> Bool { ticket == generation && foreground }
+}
+
+/// Mirrors identity.ts for native sign-in; rejects embedded origin credentials too.
+struct GridLink: Equatable, Identifiable {
+    enum Kind: String { case join, link }
+    let kind: Kind
+    let server: String
+    let code: String
+    var id: String { kind.rawValue + server + code }
+    static let alphabet = Set("23456789ABCDEFGHJKMNPQRSTVWXYZ")
+
+    static func normalizeServer(_ value: String) -> String? {
+        var value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        while value.hasSuffix("/") { value.removeLast() }
+        guard let parts = URLComponents(string: value),
+              ["http", "https"].contains(parts.scheme?.lowercased() ?? ""),
+              let host = parts.host, !host.isEmpty,
+              parts.path.isEmpty, parts.query == nil, parts.fragment == nil,
+              parts.user == nil, parts.password == nil,
+              !value.contains(where: { $0.isWhitespace }) else { return nil }
+        return value
+    }
+    static func normalizeCode(_ value: String) -> String {
+        value.uppercased().filter { !$0.isWhitespace && $0 != "-" }
+    }
+    static func parse(_ value: String) -> GridLink? {
+        guard let parts = URLComponents(string: value.trimmingCharacters(in: .whitespacesAndNewlines)),
+              parts.scheme?.lowercased() == "gipu", let host = parts.host,
+              let kind = Kind(rawValue: host),
+              let server = normalizeServer(parts.queryItems?.first { $0.name == "grid" }?.value ?? "") else { return nil }
+        let raw = parts.queryItems?.first { $0.name == "code" }?.value ?? ""
+        let code = kind == .link ? normalizeCode(raw) : raw
+        guard !code.isEmpty, code.count <= 200 else { return nil }
+        if kind == .link && (code.count != 10 || !code.allSatisfy({ alphabet.contains($0) })) { return nil }
+        return GridLink(kind: kind, server: server, code: code)
+    }
+    var payload: String {
+        var parts = URLComponents()
+        parts.scheme = "gipu"; parts.host = kind.rawValue
+        parts.queryItems = [URLQueryItem(name: "grid", value: server), URLQueryItem(name: "code", value: code)]
+        return parts.string ?? ""
+    }
 }

@@ -9,7 +9,14 @@ export const linkCodeAlphabet = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
 
 export function normalizeServer(value: string): string {
   const server = value.trim().replace(/\/+$/, '');
-  if (server && !/^https?:\/\/[^/?#\s]+$/i.test(server)) throw new Error('Use an http:// or https:// server address.');
+  if (server) {
+    const invalid = () => new Error('Use an http:// or https:// grid address without a path or sign-in details.');
+    if (!/^https?:\/\/[^/?#\s]+$/i.test(server)) throw invalid();
+    if (server.includes(String.fromCharCode(92))) throw invalid();
+    let parsed: URL;
+    try { parsed = new URL(server); } catch { throw invalid(); }
+    if (!['http:', 'https:'].includes(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) throw invalid();
+  }
   return server;
 }
 
