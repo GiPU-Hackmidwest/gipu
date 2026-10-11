@@ -17,16 +17,16 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
 | C1 | Downloadable, easy app | todo: Mac DMG + Android APK releases | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
-| C2 | QR sign-in, same credit account | review: contract/server merged; review: Android adapters (#24); todo: hosted deploy | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
-| C3 | Private sessions | review: corrected server scoping merged; todo: hosted deploy | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
+| C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
+| C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
-| C6 | Create images / Finish images toggles | done: Finish images toggle verified on the Android emulator (shared control) | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
+| C6 | Create images / Finish images toggles | done: Finish images verified on Android emulator | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
-| C8 | Device counts, no test devices | review: `grid` counts merged; todo: hosted deploy/cleanup if needed | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
+| C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
 | C10 | Rename to GiPU | todo: Tauri productName, Android/release names and remaining docs | done: GiPU in-app name and mark; bundle IDs/env names preserved |
-| C11 | Shimmer + notification, no border | review: Python and browser/Android finishers frameless (`feat/v1-invisible-finish`); coordinator still accepts legacy; todo: Android notification icon | partial: authoritative verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime remains legacy until deploy |
+| C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | partial: verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime cutover pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
@@ -35,6 +35,11 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · finisher review (PR #29)
+
+- Reviewed exact-pixel output and unchanged cancellation, privacy and settlement paths. Fresh checks pass: 34 worker, 77 coordinator and 78 frontend tests, TypeScript and production frontend build. No hosted mutation or physical-device test was performed. Compatible deployment evidence is recorded in PR #28 below.
+- Merge resolves progress-log overlap while preserving both workstreams; the coordinator continues accepting older clients. iOS cutover is a separate Codex change.
 
 ### 2026-10-11 · Claude · border-free finishing (branch `feat/v1-invisible-finish`)
 
@@ -55,6 +60,29 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
   1. The hosted coordinator (`a34aef0`) accepts frameless output, so the staged invisible iOS encoder can become the runtime finisher.
   2. Leave `POCKETGRID_ACCEPT_LEGACY_FRAME` on until every installed iOS/Android build is frameless; then Claude removes the legacy path.
   3. **Stale session:** a client whose token is no longer valid (revoked from another device, or the server's data reset) stays on the dashboard showing "Coordinator: Invalid or missing credential" and "Updates interrupted" instead of returning to sign-in. Suggest treating 401 from `/state` as signed out, after stopping any local worker.
+
+### 2026-10-11 · Codex · Docker brand build review (PR #28)
+
+- **Coordination:** user-requested review covers the narrow Docker asset fix and this status correction. No deployment or server mutation was performed in this review.
+- The web stage now preserves `apps/web` → `brand/` relative imports, and the final stage copies the resulting dist directory. `.dockerignore` includes the brand assets. A scratch copy of tracked web/brand files in the same relative layout passed TypeScript and production Vite build (`--configLoader runner`, existing dependencies); Git whitespace checks passed. The local Docker daemon was unavailable to the sandbox, so this is not a new container-build claim.
+- Confirmed in Git that `a34aef0` is `7963aca` plus only the Dockerfile fix. The hosted observations below are Claude's deployment-time evidence; this reviewer did not repeat signed-in hosted checks or independently verify current host revision. Compatible deployment unblocks a separately reviewed finisher cutover; it does not mean those clients have switched or that a physical-phone journey passed.
+
+### 2026-10-11 · Claude · hosted coordinator redeployed (`a34aef0`, branch `fix/docker-brand-assets`)
+
+- **Blocker found on main.** `docker compose build` failed: `Brand.tsx` imports `../../../brand/gipu-wordmark.svg`, but the Dockerfile's web stage copied only `apps/web`. Fix: the web stage now mirrors the repository layout (`/src/apps/web` plus `/src/brand`). This affects anyone building the server image from main, not only the hosted grid.
+- **Deployed** `a34aef0`, which is main `7963aca` plus that Dockerfile fix, to the Linode host (`DEPLOYED_COMMIT` updated).
+  - Built while the old coordinator kept serving.
+  - Smoke-tested the new image in a throwaway container on server-local port 18787 with temporary data: health, web root, anonymous join, `grid`, link code.
+  - Then stopped the coordinator, backed up the database and images together to `/root/backups/grid-pre-a34aef0-2026-10-11-0821.tgz` (1.5 MB), and started the new image. Downtime was about a minute.
+- **Verification (hosted):**
+  - The coordinator became healthy with no errors in its logs; planner mode is still `akamai`, available.
+  - `POST /api/sessions/link-codes` without auth returns 401 (it was 405 on the old code). HTTP redirects to HTTPS, port 8787 is unreachable from outside, and the site serves the new GiPU sign-in.
+  - Migration: 15 users, 15 active sessions, 0 tokens left on `users`, so existing sign-ins carried over. All 11 jobs and 20 device rows were kept, and 3 devices were online again after the restart.
+  - Not done: a signed-in hosted journey, because the join code was not read into this session, and no physical phone was used.
+- **Now unblocked:**
+  - Frameless finishers (Python, browser, iOS), since the hosted coordinator accepts both formats.
+  - Setting the `GIPU_DEFAULT_GRID` release variable to `https://66-228-53-243.ip.linodeusercontent.com`.
+  - Real-phone QR checks against the hosted grid.
 
 ### 2026-10-11 · Codex · completed integration (`docs/v1-integration-results`)
 
