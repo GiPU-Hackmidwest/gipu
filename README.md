@@ -2,7 +2,7 @@
 
 **AI images made on laptops that people choose to share, finished on phones, tracked by one small server.** No cloud image API is called. Each laptop generates whole images with a local model; a phone, browser or Android device finishes and verifies them; a coordinator hands out the work and keeps a sandbox credit ledger.
 
-> GiPU is the product name. The repository, app identifiers and some screens still say PocketGrid while the rename is in progress.
+> The apps are called GiPU. The repository, app identifiers and some internals still say PocketGrid.
 
 ```text
  Mac app · Android app · iPhone app · browser
@@ -15,6 +15,14 @@
  Laptop: Python + PyTorch      Phone / browser / Android:
  generates whole images        finishes and verifies images
 ```
+
+## Download
+
+Ready-made apps are on the [Releases page](https://github.com/pocketgrid-hackmidwest/pocketgrid/releases): a Mac app for Apple silicon (`.dmg`) and an Android app (`.apk`). Neither comes from an app store yet:
+- **Mac:** after moving the app to Applications, allow it once in **System Settings → Privacy & Security → Open Anyway**.
+- **Android:** allow **Install unknown apps** for the app you open the `.apk` with.
+
+You still need a grid to join; host one yourself (section 6) or ask for an address and join code. iPhone installs from source (section 4). How releases are built: [docs/releasing.md](docs/releasing.md).
 
 ## What you need
 
@@ -209,5 +217,6 @@ cd apps/web && node --experimental-strip-types --test tests/*.test.mjs && npm ru
 - [Project context](docs/project-context.md): what runs where and why.
 - [Protocol](docs/protocol.md): the API the apps and workers use.
 - [V1 plan](docs/v1-plan.md) and [V1 progress](docs/v1-progress.md): current work split and status.
+- [Releasing](docs/releasing.md): how the downloadable apps are built and published.
 - [Verification](docs/verification.md) and [demo steps](docs/demo.md): recorded results and how to run a demo.
 - Component guides: [web and Mac](apps/web/README.md), [iPhone](apps/ios/README.md), [worker](workers/python/README.md), [deployment](deploy/README.md), [benchmarks](benchmarks/README.md).

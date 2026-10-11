@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | todo: Mac DMG + Android APK releases | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: release workflow (`ci/v1-releases`); DMG + signed APK built locally; Android signing secrets pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | review: contract + `identity.ts`, server (`feat/v1-server-identity-privacy`); review: Android adapters (#24); todo: hosted deploy | todo: Mac/iOS sign-in + link UI, iOS scanner |
 | C3 | Private sessions | review: server scoping; todo: hosted deploy | todo: own-only presentation |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
@@ -24,8 +24,8 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C6 | Create images / Finish images toggles | todo: verify on Android | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: server sanitizing | todo: Activity presentation |
 | C8 | Device counts, no test devices | review: `grid` counts (stale devices excluded); todo: hosted DB cleanup if still needed | todo: landscape on Mac/iOS |
-| C9 | Logo | blocked on Phase 0: Tauri icons | blocked on Phase 0: iOS icon, in-app mark |
-| C10 | Rename to GiPU | todo: docs, Tauri/Android names | in progress: GiPU text implemented; current icon retained pending Phase 0 |
+| C9 | Logo | done: GiPU icons on main (`c1aa300`); todo: Android notification icon | blocked on Phase 0: iOS icon, in-app mark |
+| C10 | Rename to GiPU | review: Tauri `productName`/window title and Android label are GiPU (`ci/v1-releases`); bundle IDs unchanged | in progress: GiPU text implemented; current icon retained pending Phase 0 |
 | C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | todo: shimmer, iOS finalize, Mac/iOS notify |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
@@ -35,6 +35,24 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. Status: **todo**.
 
 ## Log
+
+### 2026-10-11 · Claude · release builds (branch `ci/v1-releases`)
+
+- **`.github/workflows/release.yml`.** A `v1.2.3` tag builds `GiPU-<version>-macos-arm64.dmg` (bundled worker) and `GiPU-<version>-android-arm64.apk`, then creates a **draft** release with `SHA256SUMS.txt` and generated notes. Manual runs and pull requests that change the workflow build both and keep them as artifacts; they publish nothing. Only official `actions/*` are used; `uv` is pinned to `0.11.*`. The optional repository variable `GIPU_DEFAULT_GRID` sets `VITE_DEFAULT_COORDINATOR`.
+- **Android signing.** `app/build.gradle.kts` signs release builds only when the gitignored `gen/android/keystore.properties` exists; CI writes it from the `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` secrets. New `scripts/android-release-key.sh` creates the key once in `~/.gipu-release/` (mode 600) and prints the `gh secret set` commands; it never prints a secret and refuses to overwrite a key. Without secrets the workflow publishes a debug-signed `...-debug.apk` with a warning.
+- **Rename (C10).** `productName` and the window title are now GiPU, so the app is `GiPU.app`. The Android label is GiPU. The build scripts use the new bundle path. Bundle IDs are unchanged, so app data, the downloaded model and installed Android data carry over.
+- **Docs.** New `docs/releasing.md` covers tagging, secrets, the default grid and what installers see. The README gains a Download section.
+- **Verification** (local, in an isolated worktree because this checkout is shared):
+  - `build-desktop-app.sh --config '{"version":"0.2.0"}'` passed in 4 min 52 s, producing `GiPU.app` (651 MB).
+  - The workflow's DMG step passed: 266 MB, and `hdiutil verify` reports VALID. Mounted, the DMG holds GiPU 0.2.0 with identifier `dev.pocketgrid.desktop`, an ad-hoc signature, all 24 worker symlinks preserved, and a bundled worker that runs. The app launched without crashing.
+  - A signed release APK, built with a throwaway key (deleted after), passed in 2 min 20 s. `apksigner` verifies the v2 signature; `aapt2` shows `versionName 0.2.0`, `versionCode 2000` and label GiPU.
+  - The release APK installed on the emulator, launched with no plugin or class errors after R8, and accepted a `gipu://join` link.
+  - **Not verified:** the workflow on GitHub runners (the pull request triggers it), notarization (no Apple Developer account), and a physical Android install.
+- **Needs Sithabo:**
+  1. Run `./scripts/android-release-key.sh` and the two `gh secret set` commands it prints, and back up `~/.gipu-release/`.
+  2. Optionally set `GIPU_DEFAULT_GRID` once the hosted grid runs the V1 server.
+  3. Tag `v0.2.0` when ready.
+- **Codex note:** the Mac window and app are now named GiPU. `worker.rs` still says "PocketGrid app data" in one error message (Codex-owned).
 
 ### 2026-10-11 · Codex · Android adapter review and integration (#24)
 
