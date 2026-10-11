@@ -24,7 +24,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C6 | Create images / Finish images toggles | done: Finish images verified on Android emulator | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 83-test integrated regression pass complete |
 | C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
-| C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
+| C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; desktop bundle icon wired and native Mac package verified |
 | C10 | Rename to GiPU | done: GiPU Tauri product/window and Android names merged #27; bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
 | C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | review: iOS runtime now uses invisible encoder after confirmed deployment; pixel/strict-settlement checks and simulator build pass; physical phone pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
@@ -36,6 +36,14 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · wire the desktop app icon (`fix/mac-bundle-icon`)
+
+- **Coordination:** Arboy requested fixing the missing Mac app icon, pushing a PR and merging it. This authorizes the focused `tauri.conf.json` change in the shared packaging configuration; the existing icon assets and Android adapters remain unchanged.
+- **Cause and change:** generated GiPU icon files exist, but `bundle.icon` is missing. The current Mac package has neither `CFBundleIconFile` nor a Resources icon. Reference the existing PNG/ICNS/ICO assets so desktop bundling and the compiled default icon use the supplied brand.
+- **Verification:** production frontend and native Mac Tauri debug build passed. The resulting app declares `CFBundleIconFile=icon.icns` and contains `Contents/Resources/icon.icns`; SHA-256 matches the existing source ICNS exactly. The source PNG was visually inspected as the supplied GiPU mark. Whitespace checks passed. This checks Mac packaging; Android and Windows builds were not rerun.
+- **Handoff:** rebuild existing installers to include the icon; installed older packages retain their original resources.
+- **Open questions:** none.
 
 ### 2026-10-11 · Codex · leaderboard merged and hosted rollout (`fix/leaderboard-rollout-record`)
 
