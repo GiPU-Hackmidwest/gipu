@@ -7,11 +7,29 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::{webview::DownloadEvent, Emitter};
 
+// Android keeps session secrets encrypted with an Android Keystore key; see SecureStoragePlugin.kt.
+#[cfg(target_os = "android")]
+fn secure_storage<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri::plugin::Builder::new("secure-storage")
+        .setup(|_app, api| {
+            api.register_android_plugin("dev.pocketgrid.app", "SecureStoragePlugin")?;
+            Ok(())
+        })
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_clipboard_manager::init());
+
+    // QR sign-in: gipu:// links, the camera scanner and secure session storage.
+    #[cfg(target_os = "android")]
+    let builder = builder
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_barcode_scanner::init())
+        .plugin(secure_storage());
 
     #[cfg(desktop)]
     let builder = builder
