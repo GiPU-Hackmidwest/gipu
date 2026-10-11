@@ -44,7 +44,7 @@ Akamai does not discover hardware or install image models automatically. PocketG
 | services/coordinator/server.py | Load local environment and launch coordinator |
 | workers/python/worker.py | Device registration, heartbeats, claims, local image inference, cancellation and completion uploads |
 | apps/web/ | React/TypeScript interface and browser image finalizer |
-| apps/web/src-tauri/ | Rust/Tauri desktop shell; Python inference worker remains a separate process |
+| apps/web/src-tauri/ | Rust/Tauri desktop shell; explicit Connect launches a prepared Python inference worker as a managed local process, initially paused |
 | apps/ios/ | SwiftUI app, Keychain sessions, foreground image processing and local notifications |
 | deploy/ | Coordinator Docker image, Compose, Caddy HTTPS and workshop instructions |
 | benchmarks/ | Independent local-model tests and recorded exploratory CPU evidence |
@@ -55,8 +55,8 @@ The active coordinator used during the shared demo ran on Arboy's Mac. An Akamai
 ## Request through delivery
 
 1. A client joins through POST /api/sessions with the grid join code, receives a session bearer token and registers its device. New devices are paused. A fresh session receives 100 sandbox credits; a manual top-up of one local demo account to 1000 did not change this default.
-2. The requester submits POST /api/jobs with prompt, image count, dimensions, steps, budget, request_id and use_agent. Currently this endpoint waits synchronously for planning when an agent is selected.
-3. With agent planning enabled, Strands invokes the configured chat model and executes bounded tools to inspect devices, quote, submit and inspect the job. The model cannot authorize a larger budget or alter the user's prompt/count. Without agent planning, the deterministic pipeline is explicitly labeled manual.
+2. The requester submits POST /api/jobs with prompt, image count, dimensions, steps, budget, request_id and use_agent. With an agent selected, the endpoint persists the request, reserves the budget and returns `planning` immediately; a background planner then queues tasks or fails the job with a refund (see docs/protocol.md).
+3. With agent planning enabled, the background planner claims the request and Strands invokes the configured chat model and executes bounded tools to inspect devices, quote, submit and inspect the job. The model cannot authorize a larger budget or alter the user's prompt/count. Without agent planning, the deterministic pipeline is explicitly labeled manual.
 4. The store reserves the authorized budget transactionally and creates generation tasks. If no eligible workers are available, the job waits in the queue. This is not a request-delivery failure.
 5. Enabled workers poll POST /api/devices/{id}/claim. Eligible work gets a lease. The worker sends heartbeats and progress, respecting its session and pixel limits.
 6. The laptop executes the image model locally, encodes PNG bytes and uploads them to POST /api/tasks/{id}/complete with its device token and lease ID. No cloud image-generation API is called by this path.
@@ -99,7 +99,7 @@ Tiny-SD is the live default. Benchmark PR #1 was merged into main before this gu
 
 The initial 512px CPU comparison used two threads and six measured images per model: Tiny-SD at twelve steps had a 16.725-second median; SD-Turbo at four steps had a 5.372-second median. Sampled peak process RSS was 7898.5 MiB and 11236.3 MiB. The baseline overlapped model downloading/loading and had uncontrolled background activity. These are exploratory generation-only measurements, not end-to-end latency, GPU performance or proof of quality superiority. Visual prompt-following errors occurred in both. See benchmarks/cpu-baseline.json.
 
-Two threads were a conservative demo setting, not the Mac's capacity. Arboy's Mac has an M4 Pro and 48GB unified memory. The tool process reported MPS unavailable; this does not prove the machine lacks GPU capability. GPU access, broader model comparisons and a better image model remain on Arboy's workstream.
+Two threads were a conservative demo setting, not the Mac's capacity. Arboy's Mac has an M4 Pro and 48GB unified memory. The tool process reported MPS unavailable, while the user's normal Terminal reported it available. A subsequent native Mac app test loaded Tiny-SD on MPS, connected paused, and generated a real 256px image at twelve steps in 4.06 seconds, accepted by the coordinator for six credits. This is one generation-only smoke measurement, not a quality or throughput benchmark and not comparable to the 512px CPU baseline. Broader GPU comparisons and a better image model remain on Arboy's workstream.
 
 Future routing may choose a local model or an explicitly permitted cloud image provider. Filter by capabilities, hardware, loaded model, queue, quality requirements, deadline and budget before any optional classifier. Short prompts are not necessarily easy images. Jev/Decision API integration is only a proposal; no classifier or cloud image fallback is currently implemented. Keep planning-provider choice separate from image-model choice.
 
@@ -113,7 +113,7 @@ Outstanding verification includes public HTTPS coordinator deployment, real phys
 
 Known issues and lessons:
 
-- Generate could time out on iPhone after 20 seconds while Strands was still working. A temporary client fix allows 180 seconds for job creation and reuses request IDs for unchanged retries in the same app session. Durable asynchronous submission is still required.
+- Generate could time out on iPhone after 20 seconds while Strands was still working. A temporary client fix allows 180 seconds for job creation and reuses request IDs for unchanged retries in the same app session. The coordinator now acknowledges agent requests immediately with a durable `planning` state, so clients can return to the normal timeout once they display and cancel `planning` jobs.
 - Sharing sessions expire. A connected worker can be paused and unavailable. Show this explicitly in the UI.
 - Returning from background pauses phone contribution. Keep it foregrounded during the current demo.
 - A LAN coordinator must bind to 0.0.0.0; physical devices use the Mac's current LAN address, not localhost. Same-network connectivity is necessary and some networks isolate clients.

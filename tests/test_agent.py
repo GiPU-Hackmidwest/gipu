@@ -66,14 +66,28 @@ def use_model(monkeypatch, steps):
     return model, modes
 
 
+def current(store, job_id):
+    with store.tx() as db:
+        return store.job(db, job_id)
+
+
+def plan(store, user, req):
+    """Accept the request, then run the background planner once."""
+    accepted = agent.dispatch(store, user, req)
+    assert accepted['status'] == 'planning' and not accepted['tasks']
+    assert agent.plan_once(store)
+    return current(store, accepted['id'])
+
+
 def test_sdk_dispatch_routes_to_selected_device_and_is_idempotent(grid, monkeypatch):
     store, now, user, devices = grid
     model, modes = use_model(monkeypatch, [response('inspect_devices'), response('quote_job'),
         response('submit_job', explanation='Select B', generation_device_ids=[devices[1]],
                  finalize_device_ids=[devices[1]]), response('inspect_job')])
     req = dict(request(), use_agent=True)
-    job = agent.dispatch(store, user, req)
-    assert modes == ['ollama']
+    job = plan(store, user, req)
+    assert modes == ['ollama'] and job['plan']['planning']['status'] == 'done'
+    assert job['status'] == 'queued' and len(job['tasks']) == 1
     assert [t['tool'] for t in job['plan']['tools']] == ['inspect_devices', 'quote_job', 'submit_job', 'inspect_job']
     assert {d['id'] for d in job['plan']['tools'][0]['result']['devices']} == set(devices)
     assert store.claim(devices[0])['task'] is None
@@ -88,11 +102,10 @@ def test_bad_model_selection_cannot_reserve_or_change_authorized_request(grid, m
     use_model(monkeypatch, [response('inspect_devices'), response('quote_job'),
         response('submit_job', explanation='Invented target', generation_device_ids=['not-a-device'],
                  finalize_device_ids=[devices[1]])])
-    with pytest.raises(HTTPException) as exc:
-        agent.dispatch(store, user, dict(request(), use_agent=True))
-    assert exc.value.status_code == 502
-    snapshot = store.snapshot(user)
-    assert snapshot['balance'] == 100 and not snapshot['jobs']
+    job = plan(store, user, dict(request(), use_agent=True))
+    assert job['status'] == 'failed' and not job['tasks']
+    assert job['receipt'] == {'budget': 10, 'contributor_total': 0, 'platform_fee': 0, 'refund': 10, 'total_charged': 0}
+    assert store.snapshot(user)['balance'] == 100
 
 
 def test_provider_failure_after_submit_preserves_reservation_and_trace(grid, monkeypatch):
@@ -100,7 +113,9 @@ def test_provider_failure_after_submit_preserves_reservation_and_trace(grid, mon
     model, _ = use_model(monkeypatch, [response('inspect_devices'), response('quote_job'),
         response('submit_job', explanation='Select B', generation_device_ids=[devices[1]],
                  finalize_device_ids=[devices[1]]), RuntimeError('Secret provider body is not recorded')])
-    job = agent.dispatch(store, user, dict(request(), use_agent=True))
+    job = plan(store, user, dict(request(), use_agent=True))
+    assert job['status'] == 'queued'
+
     assert job['plan']['dispatch_error'] == 'RuntimeError'
     assert store.snapshot(user)['balance'] == 90
     assert 'Secret provider' not in json.dumps(job)
@@ -231,7 +246,7 @@ def test_corrective_continuations_finish_real_tools_after_early_model_end(grid, 
         response('quote_job'), [], response('submit_job', explanation='Selected B',
         generation_device_ids=[devices[1]], finalize_device_ids=[devices[1]]), [],
         response('inspect_job'), []])
-    job = agent.dispatch(store, user, dict(request(), use_agent=True))
+    job = plan(store, user, dict(request(), use_agent=True))
     assert model.calls == 7 and modes == ['ollama']
     assert 'dispatch_error' not in job['plan']
     assert store.claim(devices[0])['task'] is None
@@ -241,11 +256,10 @@ def test_corrective_continuations_finish_real_tools_after_early_model_end(grid, 
 def test_corrective_continuations_share_the_same_model_budget(grid, monkeypatch):
     store, now, user, devices = grid
     model, modes = use_model(monkeypatch, [[] for _ in range(40)])
-    with pytest.raises(HTTPException):
-        agent.dispatch(store, user, dict(request(), use_agent=True))
+    job = plan(store, user, dict(request(), use_agent=True))
     assert model.calls == agent.MAX_CALLS and modes == ['ollama']
+    assert job['status'] == 'failed' and not job['tasks']
     assert store.snapshot(user)['balance'] == 100
-    assert not store.snapshot(user)['jobs']
 
 
 @pytest.mark.parametrize('valid', [True, False])
@@ -256,14 +270,12 @@ def test_ollama_stringified_arrays_preserve_ids_and_still_use_store_validation(g
         response('submit_job', explanation='Transport encoding test',
                  generation_device_ids=json.dumps(selected), finalize_device_ids=json.dumps([devices[1]])),
         response('inspect_job')])
+    job = plan(store, user, dict(request(), use_agent=True))
     if valid:
-        job = agent.dispatch(store, user, dict(request(), use_agent=True))
         assert job['plan']['routes']['image_generate'] == selected
         assert job['plan']['tools'][2]['input']['image_generate'] == selected
         assert store.claim(devices[0])['task'] is None
         assert store.claim(devices[1])['task']['job_id'] == job['id']
     else:
-        with pytest.raises(HTTPException):
-            agent.dispatch(store, user, dict(request(), use_agent=True))
+        assert job['status'] == 'failed' and not job['tasks']
         assert store.snapshot(user)['balance'] == 100
-        assert not store.snapshot(user)['jobs']

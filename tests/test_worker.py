@@ -1,8 +1,11 @@
 """Checks real pixel transformations and immediate cancellation boundaries."""
 import importlib.util
 import io
+import json
 from pathlib import Path
+import sys
 import threading
+from types import SimpleNamespace
 
 import httpx
 from PIL import Image
@@ -163,3 +166,228 @@ def test_lost_heartbeat_cancels_at_next_denoising_callback(run_heartbeats):
     with pytest.raises(worker.WorkCancelled):
         callback(None, 0, None, {})
     assert progress == []
+
+
+@pytest.fixture
+def registration_args(tmp_path):
+    return SimpleNamespace(
+        identity=str(tmp_path / "desktop-device.json"), server="http://worker.test",
+        session_token="owner-secret", name="Test owner", join_code="test-join-code",
+        device_name="Test laptop", generate_only=True, share=False, connect_paused=False,
+        cpu_threads=2, max_pixels=262144, session_minutes=30,
+    )
+
+
+def saved_identity(args):
+    identity = {
+        "server": args.server, "device_id": "device-a", "token": "device-secret",
+        "owner_token": "owner-secret", "generates": True, "generate_only": True,
+    }
+    worker.save_identity(Path(args.identity), identity)
+    return identity
+
+
+@pytest.fixture
+def mock_registration_http(monkeypatch):
+    client_class = httpx.Client
+
+    def install(handler):
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return handler(request)
+
+        monkeypatch.setattr(worker.httpx, "Client", lambda **kwargs: client_class(
+            **kwargs, transport=httpx.MockTransport(respond)))
+        return requests
+
+    return install
+
+
+def test_connect_paused_registers_and_explicitly_disables_new_device(registration_args, mock_registration_http):
+    args = registration_args
+    args.connect_paused = True
+
+    def respond(request):
+        assert request.headers["Authorization"] == "Bearer owner-secret"
+        if request.method == "POST":
+            assert request.url.path == "/api/devices"
+            assert json.loads(request.content)["capabilities"] == ["image_generate"]
+            return httpx.Response(200, json={"device": {"id": "device-a", "enabled": False}, "token": "device-secret"})
+        assert (request.method, request.url.path) == ("PATCH", "/api/devices/device-a")
+        assert json.loads(request.content) == {"enabled": False}
+        return httpx.Response(200, json={"device": {"id": "device-a", "enabled": False}})
+
+    requests = mock_registration_http(respond)
+    identity = worker.register(args, worker.LocalRenderer("cpu"))
+    assert [request.method for request in requests] == ["POST", "PATCH"]
+    assert json.loads(Path(args.identity).read_text()) == identity
+    assert Path(args.identity).stat().st_mode & 0o777 == 0o600
+
+
+def test_connect_paused_disables_previously_enabled_identity_before_return(registration_args, mock_registration_http):
+    args = registration_args
+    expected = saved_identity(args)
+    args.session_token = None  # Reuse the persisted owner credential.
+    args.connect_paused = True
+    state = {"enabled": True}
+
+    def respond(request):
+        assert (request.method, request.url.path) == ("PATCH", "/api/devices/device-a")
+        assert request.headers["Authorization"] == "Bearer owner-secret"
+        assert json.loads(request.content) == {"enabled": False}
+        state.update(json.loads(request.content))
+        return httpx.Response(200, json={"device": state})
+
+    requests = mock_registration_http(respond)
+    assert worker.register(args, worker.LocalRenderer("cpu")) == expected
+    assert not state["enabled"]
+    assert len(requests) == 1
+    assert json.loads(Path(args.identity).read_text()) == expected
+
+
+def test_share_and_connect_paused_conflict_before_loading_or_network(monkeypatch, tmp_path):
+    monkeypatch.setattr(sys, "argv", ["worker.py", "run", "--share", "--connect-paused", "--identity", str(tmp_path / "new.json")])
+    monkeypatch.setattr(worker.LocalRenderer, "load", lambda *a, **k: pytest.fail("Conflicting options must not load a model"))
+    monkeypatch.setattr(worker.httpx, "Client", lambda *a, **k: pytest.fail("Conflicting options must not contact the coordinator"))
+    with pytest.raises(SystemExit) as error:
+        worker.main()
+    assert error.value.code == 2
+    assert not (tmp_path / "new.json").exists()
+
+
+@pytest.mark.parametrize("sharing_option", [[], ["--share"], ["--connect-paused"]])
+def test_owner_mismatch_rejected_before_model_load_network_or_mutation(monkeypatch, registration_args, sharing_option):
+    args = registration_args
+    saved_identity(args)
+    before = Path(args.identity).read_bytes()
+    monkeypatch.setattr(sys, "argv", [
+        "worker.py", "run", "--server", args.server, "--identity", args.identity,
+        "--session-token", "other-owner-secret", "--generate-only", *sharing_option,
+    ])
+    monkeypatch.setattr(worker.LocalRenderer, "load", lambda *a, **k: pytest.fail("Owner mismatch must not download a model"))
+    monkeypatch.setattr(worker.httpx, "Client", lambda *a, **k: pytest.fail("Owner mismatch must not contact the coordinator"))
+    monkeypatch.setattr(worker, "save_identity", lambda *a, **k: pytest.fail("Owner mismatch must not change the identity"))
+    with pytest.raises(ValueError, match="different owner session.*new --identity") as error:
+        worker.main()
+    assert "owner-secret" not in str(error.value)
+    assert Path(args.identity).read_bytes() == before
+
+
+def test_register_also_rejects_owner_mismatch_before_network(monkeypatch, registration_args):
+    args = registration_args
+    saved_identity(args)
+    args.session_token = "other-owner-secret"
+    monkeypatch.setattr(worker.httpx, "Client", lambda *a, **k: pytest.fail("Owner mismatch must not contact the coordinator"))
+    with pytest.raises(ValueError, match="different owner session.*new --identity"):
+        worker.register(args, worker.LocalRenderer("cpu"))
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("share", [False, True])
+def test_ordinary_registration_preserves_explicit_sharing_and_restart_behavior(
+        registration_args, mock_registration_http, existing, share):
+    args = registration_args
+    args.share = share
+    if existing:
+        saved_identity(args)
+    state = {"id": "device-a", "enabled": existing}
+
+    def respond(request):
+        assert request.headers["Authorization"] == "Bearer owner-secret"
+        if request.method == "POST":
+            assert not existing
+            assert request.url.path == "/api/devices"
+            return httpx.Response(200, json={"device": state, "token": "device-secret"})
+        assert share
+        assert (request.method, request.url.path) == ("PATCH", "/api/devices/device-a")
+        assert json.loads(request.content) == {
+            "enabled": True,
+            "limits": {"cpu_threads": 2, "max_pixels": 262144, "session_minutes": 30},
+        }
+        state.update(json.loads(request.content))
+        return httpx.Response(200, json={"device": state})
+
+    requests = mock_registration_http(respond)
+    worker.register(args, worker.LocalRenderer("cpu"))
+    assert state["enabled"] is (existing or share)
+    assert [request.method for request in requests] == ([] if existing else ["POST"]) + (["PATCH"] if share else [])
+
+
+@pytest.mark.parametrize("pause_status", [200, 403, 503])
+def test_native_readiness_requires_loaded_model_and_confirmed_pause(
+        monkeypatch, registration_args, mock_registration_http, capsys, pause_status):
+    args = registration_args
+    events = []
+
+    def load(renderer, cpu_threads, local_only):
+        assert cpu_threads == 2
+        assert local_only is True
+        renderer.backend = "cpu"
+        events.append("model loaded")
+
+    def respond(request):
+        assert events[0] == "model loaded"
+        if request.method == "POST":
+            assert request.url.path == "/api/devices"
+            events.append("registered")
+            return httpx.Response(200, json={"device": {"id": "device-a"}, "token": "device-secret"})
+        assert (request.method, request.url.path) == ("PATCH", "/api/devices/device-a")
+        assert request.headers["Authorization"] == "Bearer owner-secret"
+        assert json.loads(request.content) == {"enabled": False}
+        events.append("pause confirmed" if pause_status == 200 else "pause failed")
+        return httpx.Response(pause_status, json={"device": {"id": "device-a", "enabled": False}})
+
+    class ReadyWorker:
+        def __init__(self, server, identity, renderer):
+            assert pause_status == 200
+            self.stop = threading.Event()
+            self.cancel = threading.Event()
+
+        def run(self):
+            output = capsys.readouterr().out
+            lines = output.splitlines()
+            assert len(lines) == 1
+            assert lines[0].startswith("POCKETGRID_READY ")
+            assert json.loads(lines[0].removeprefix("POCKETGRID_READY ")) == {
+                "device_id": "device-a", "backend": "cpu", "model": "segmind/tiny-sd",
+            }
+            assert all(secret not in output for secret in ["owner-secret", "device-secret", "owner_token", "token"])
+            assert events == ["model loaded", "registered", "pause confirmed"]
+            events.append("work loop")
+
+    mock_registration_http(respond)
+    monkeypatch.setattr(worker.LocalRenderer, "load", load)
+    monkeypatch.setattr(worker, "DeviceWorker", ReadyWorker)
+    monkeypatch.setattr(worker.signal, "signal", lambda *a: None)
+    monkeypatch.setattr(sys, "argv", [
+        "worker.py", "run", "--generate-only", "--connect-paused", "--local-only",
+        "--server", args.server, "--identity", args.identity, "--session-token", args.session_token,
+    ])
+    if pause_status == 200:
+        worker.main()
+        assert events[-1] == "work loop"
+    else:
+        with pytest.raises(httpx.HTTPStatusError):
+            worker.main()
+        assert "POCKETGRID_READY" not in capsys.readouterr().out
+        assert events[-1] == "pause failed"
+
+
+def test_model_load_failure_never_registers_or_reports_ready(monkeypatch, registration_args, capsys):
+    args = registration_args
+
+    def unavailable(*a, **k):
+        raise RuntimeError("Cached model is unavailable")
+
+    monkeypatch.setattr(worker.LocalRenderer, "load", unavailable)
+    monkeypatch.setattr(worker.httpx, "Client", lambda *a, **k: pytest.fail("Model must load before registration"))
+    monkeypatch.setattr(sys, "argv", [
+        "worker.py", "run", "--generate-only", "--connect-paused", "--local-only",
+        "--server", args.server, "--identity", args.identity, "--session-token", args.session_token,
+    ])
+    with pytest.raises(RuntimeError, match="Cached model"):
+        worker.main()
+    assert "POCKETGRID_READY" not in capsys.readouterr().out
+    assert not Path(args.identity).exists()

@@ -289,12 +289,21 @@ def save_identity(path: Path, identity: dict) -> None:
         json.dump(identity, handle)
 
 
-def register(args, renderer) -> dict:
+def read_identity(args) -> dict | None:
     path = Path(args.identity)
     server = args.server.rstrip("/")
     identity = json.loads(path.read_text()) if path.exists() else None
     if identity and identity["server"] != server:
         raise ValueError("Identity is for a different coordinator; use another --identity path")
+    if identity and args.session_token and args.session_token != identity.get("owner_token"):
+        raise ValueError("Identity belongs to a different owner session; choose a new --identity path to pair this account")
+    return identity
+
+
+def register(args, renderer) -> dict:
+    path = Path(args.identity)
+    server = args.server.rstrip("/")
+    identity = read_identity(args)
     with httpx.Client(base_url=server, timeout=10) as client:
         owner_token = args.session_token or (identity or {}).get("owner_token")
         if not identity:
@@ -323,6 +332,13 @@ def register(args, renderer) -> dict:
                 "enabled": True, "limits": {"cpu_threads": args.cpu_threads, "max_pixels": args.max_pixels, "session_minutes": args.session_minutes},
             })
             response.raise_for_status()
+        elif args.connect_paused:
+            if not owner_token:
+                raise ValueError("--connect-paused needs an owner session token; choose a new --identity path to pair this account")
+            response = client.patch(f"/api/devices/{identity['device_id']}", headers={"Authorization": f"Bearer {owner_token}"}, json={
+                "enabled": False,
+            })
+            response.raise_for_status()
     return identity
 
 
@@ -335,7 +351,9 @@ def main() -> None:
     parser.add_argument("--name", default="Demo contributor")
     parser.add_argument("--device-name", default=socket.gethostname())
     parser.add_argument("--identity", default=str(ROOT / ".device.json"))
-    parser.add_argument("--share", action="store_true", help="Explicitly enable a timed contribution session")
+    sharing = parser.add_mutually_exclusive_group()
+    sharing.add_argument("--share", action="store_true", help="Explicitly enable a timed contribution session")
+    sharing.add_argument("--connect-paused", action="store_true", help="Connect with sharing paused, including when reusing an enabled identity")
     capabilities = parser.add_mutually_exclusive_group()
     capabilities.add_argument("--finalize-only", action="store_true", help="Only run deterministic image export; no model needed")
     capabilities.add_argument("--generate-only", action="store_true", help="Leave image export tasks to phones/browser workers")
@@ -359,6 +377,9 @@ def main() -> None:
     args.steps = args.steps or profile["steps"]
     if args.model != "tiny-sd" and args.steps > 4:
         parser.error("Turbo profiles support 1–4 benchmark steps")
+    if args.command == "run":
+        # Reject mismatched pairing before model loading can download anything.
+        read_identity(args)
     renderer = None if args.finalize_only and args.command == "run" else LocalRenderer(args.backend, args.model)
     if renderer:
         renderer.load(args.cpu_threads, local_only=args.local_only)
@@ -376,6 +397,11 @@ def main() -> None:
         print(json.dumps({"output": str(output.resolve()), "backend": renderer.backend, "model": renderer.model, "elapsed_seconds": round(time.monotonic() - started, 3), "bytes": len(data)}))
         return
     identity = register(args, renderer)
+    print("POCKETGRID_READY " + json.dumps({
+        "device_id": identity["device_id"],
+        "backend": renderer.backend if renderer else "cpu",
+        "model": renderer.model if renderer else "Pillow image finalizer",
+    }), flush=True)
     worker = DeviceWorker(args.server, identity, renderer)
     def stop(_signal, _frame):
         worker.cancel.set()

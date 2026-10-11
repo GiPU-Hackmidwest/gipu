@@ -21,9 +21,21 @@ workers/python/.venv/bin/python workers/python/worker.py run \
   --share --cpu-threads 2 --max-pixels 262144 --session-minutes 30
 ```
 
-For an existing web-app owner, the desktop launcher supplies their session token through `POCKETGRID_SESSION_TOKEN`. Otherwise the CLI creates an owner session with the invite code from `POCKETGRID_JOIN_CODE` (local default `pocketgrid-demo`). An identity file stores owner and device credentials with owner-only file permissions. Do not share or commit it. To register another physical device/process, use a different `--identity PATH`.
+For an existing web-app owner, the desktop launcher supplies their session token through `POCKETGRID_SESSION_TOKEN`. Otherwise the CLI creates an owner session with the invite code from `POCKETGRID_JOIN_CODE` (local default `pocketgrid-demo`). An identity file stores owner and device credentials with owner-only file permissions. Do not share or commit it. To register another physical device/process, use a different `--identity PATH`. A supplied session token must match an existing identity's owner token; pairing a different account requires a new identity path. This check happens before model loading or coordinator requests.
 
 Without `--share`, a new device registers paused. A restarted device may continue an existing, explicitly enabled session until it expires. The app can pause it or change its limits. Ctrl-C stops execution; the coordinator reassigns unfinished work after its lease expires.
+
+To connect with sharing paused even when reusing a previously enabled identity:
+
+```sh
+workers/python/.venv/bin/python workers/python/worker.py run \
+  --server http://127.0.0.1:8787 --generate-only --connect-paused --local-only \
+  --identity workers/python/.cache/desktop-paired-device.json
+```
+
+`--connect-paused` confirms an owner-authenticated pause with the coordinator before the worker can claim work. It cannot be combined with `--share`. After the model loads and registration succeeds, stdout includes one `POCKETGRID_READY ` line followed by JSON containing only `device_id`, `backend`, and `model`. A failed registration or pause emits no readiness line and does not enter the work loop.
+
+The native desktop **Connect** action uses this paused, generation-only, cache-only path and a separate identity for each coordinator/account pairing. It requires an already prepared Python environment and cached Tiny-SD weights; it does not install dependencies or download models. Run the setup and `prepare` commands above first. Once connected, explicitly choose **Start sharing** in the app to enable generation. Connecting alone does not start sharing. A paused worker keeps the model loaded in memory until it exits.
 
 Controls are concrete: one active job, an image pixel limit, a timed sharing session, and CPU thread count. The CPU thread limit does **not** promise a GPU percentage, RAM cap, or battery limit. Heartbeats run independently of inference. A pause/revocation cancels at the next denoising callback; the current kernel cannot be interrupted mid-step. Nine seconds without coordinator confirmation also requests cancellation. An abandoned image restarts on another worker rather than resuming a diffusion checkpoint.
 
@@ -40,7 +52,7 @@ workers/python/.venv/bin/python -m pip install pytest
 workers/python/.venv/bin/python -m pytest tests/test_worker.py -q
 ```
 
-Tests check pixel accuracy, cancellation boundaries, and source URL token isolation. The smoke command is the separate proof of real local inference.
+Tests check pixel accuracy, cancellation boundaries, source URL token isolation, paused registration, account-pairing isolation, and readiness ordering. Registration tests use mocked HTTP and model loading; they perform no live work or model downloads. The smoke command is the separate proof of real local inference.
 
 ## Experimental model comparison
 
