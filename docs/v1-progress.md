@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: Mac signature fix merged #45; v0.4.1 draft checksum/signature/worker verified; second-Mac installation/publication pending; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: Mac signature fix merged #45; v0.4.1 installed in Applications with verified signature; rendered release window/second-Mac installation/publication pending; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: Arboy's later direction supersedes the original pair; logo orange with dark ink measures 5.34:1; native Mac inspected |
@@ -36,6 +36,12 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · install latest Mac DMG (PR #47, `docs/mac-install-0.4.1`)
+
+- **Installation:** Arboy requested installing the latest repository DMG. GitHub still lists v0.4.1 as the newest Mac draft; its build source `d317a38` includes the latest app changes, with only documentation commits after it. Rechecked the downloaded asset against GitHub's SHA-256 digest, then copied the verified mounted app into `/Applications/GiPU.app` with the granted filesystem permission. The installed version reports 0.4.1 and passes `codesign --verify --deep --strict`. No quarantine attributes or system security settings were changed.
+- **Launch:** the older debug app had both contribution toggles off and was quit. Launched the installed app and confirmed its running executable is under `/Applications/GiPU.app`; Finder also shows that installation. Native accessibility inspection of the release window fails, so this is installation/process evidence, not a verified rendered release journey.
+- **Handoff / Open questions:** the draft remains unpublished; second-Mac installation and the release app's rendered interaction check remain pending. Existing account/model data and personal Xcode signing changes were preserved. Documentation-only record checked with `git diff --check`.
 
 ### 2026-10-11 · Codex · corrected Mac draft and app launch (PR #46, `docs/mac-release-0.4.1`)
 
