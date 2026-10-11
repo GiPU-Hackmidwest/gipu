@@ -135,7 +135,7 @@ def _devices(store, user_id, pixels):
          'available': d['enabled'] and d['online'] and not d['active_task_id']
                       and pixels <= d['limits']['max_pixels'],
          'active_task_id': d['active_task_id'], 'max_pixels': d['limits']['max_pixels']}
-        for d in store.snapshot(user_id)['devices']], 'required_pixels': pixels}
+        for d in store.grid_devices()], 'required_pixels': pixels}
 
 
 def _job_result(store, job_id):

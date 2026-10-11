@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import threading
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -22,8 +25,26 @@ class Strict(BaseModel):
 
 
 class Session(Strict):
-    name: str = Field(min_length=1, max_length=60)
+    name: str | None = Field(default=None, max_length=80)
     join_code: str = Field(min_length=1, max_length=200)
+    client_name: str | None = Field(default=None, max_length=80)
+
+
+class LinkRedemption(Strict):
+    code: str = Field(min_length=1, max_length=20)
+    client_name: str | None = Field(default=None, max_length=80)
+
+
+class Credentials(Strict):
+    username: str = Field(min_length=3, max_length=40, pattern=r'^[A-Za-z0-9._-]+$')
+    password: str = Field(min_length=8, max_length=200)
+    current_password: str | None = Field(default=None, max_length=200)
+
+
+class Login(Strict):
+    username: str = Field(min_length=1, max_length=40)
+    password: str = Field(min_length=1, max_length=200)
+    client_name: str | None = Field(default=None, max_length=80)
 
 
 class Limits(Strict):
@@ -109,7 +130,26 @@ def create_app(data_dir=None):
     app = FastAPI(title='PocketGrid', version='0.1.0', lifespan=lifespan)
     app.state.store = store
     origins = os.getenv('POCKETGRID_ALLOWED_ORIGINS','http://localhost:5173,http://127.0.0.1:5173,tauri://localhost,http://tauri.localhost').split(',')
-    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET','POST','PATCH'], allow_headers=['Authorization','Content-Type'])
+    app.add_middleware(CORSMiddleware, allow_origins=origins, allow_methods=['GET','POST','PATCH','DELETE'], allow_headers=['Authorization','Content-Type'])
+
+    # In-memory guard against guessing link codes and passwords; resets on restart.
+    failures, failures_lock = defaultdict(deque), threading.Lock()
+
+    def guarded(request: Request, attempt):
+        address, now = request.client.host if request.client else '', time.monotonic()
+        with failures_lock:
+            recent = failures[address]
+            while recent and recent[0] < now - 60:
+                recent.popleft()
+            if len(recent) >= 5:
+                raise HTTPException(429, 'Too many attempts; wait a minute')
+        try:
+            return attempt()
+        except HTTPException as error:
+            if error.status_code in (400, 401):
+                with failures_lock:
+                    failures[address].append(now)
+            raise
 
     @app.middleware('http')
     async def size_limit(request: Request, call_next):
@@ -135,6 +175,9 @@ def create_app(data_dir=None):
     def member(credential=Depends(token)):
         return store.auth_any(credential)
 
+    def text(value):
+        return (value or '').strip() or None
+
     def own_worker(device_id, device):
         if device['id'] != device_id:
             raise HTTPException(403,'Device token does not match')
@@ -148,7 +191,35 @@ def create_app(data_dir=None):
         expected = os.getenv('POCKETGRID_JOIN_CODE','pocketgrid-demo')
         if not secrets.compare_digest(body.join_code, expected):
             raise HTTPException(403,'Incorrect grid join code')
-        return store.session(body.name.strip())
+        return store.session(text(body.name), text(body.client_name))
+
+    @app.post('/api/sessions/link-codes')
+    def link_code(user=Depends(owner)):
+        return store.create_link_code(user['id'])
+
+    @app.post('/api/sessions/link')
+    def link(body: LinkRedemption, request: Request):
+        return guarded(request, lambda: store.redeem_link_code(body.code, text(body.client_name)))
+
+    @app.post('/api/sessions/login')
+    def login(body: Login, request: Request):
+        return guarded(request, lambda: store.login(body.username, body.password, text(body.client_name)))
+
+    @app.post('/api/sessions/logout')
+    def logout(user=Depends(owner)):
+        return store.revoke_session(user['id'], user['session_id'])
+
+    @app.get('/api/sessions')
+    def sessions(user=Depends(owner)):
+        return store.sessions(user['id'], user['session_id'])
+
+    @app.delete('/api/sessions/{session_id}')
+    def revoke(session_id: str, user=Depends(owner)):
+        return store.revoke_session(user['id'], session_id)
+
+    @app.post('/api/account/credentials')
+    def credentials(body: Credentials, user=Depends(owner)):
+        return store.set_credentials(user['id'], body.username, body.password, body.current_password)
 
     @app.get('/api/state')
     def state(user=Depends(owner)):
@@ -194,24 +265,21 @@ def create_app(data_dir=None):
 
     @app.post('/api/jobs')
     def create_job(body: JobRequest,user=Depends(owner)):
-        return agent.dispatch(store,user['id'],body.model_dump())
+        return store.view_job(agent.dispatch(store,user['id'],body.model_dump()),user['id'])
 
     @app.get('/api/jobs/{job_id}')
-    def job(job_id: str,_=Depends(member)):
-        with store.tx() as db:
-            store.sweep(db)
-            return store.job(db,job_id)
+    def job(job_id: str,credential=Depends(member)):
+        user,device = credential
+        return store.member_job(job_id,user,device)
 
     @app.post('/api/jobs/{job_id}/cancel')
     def cancel(job_id: str,user=Depends(owner)):
-        return store.cancel(user['id'],job_id)
+        return store.view_job(store.cancel(user['id'],job_id),user['id'])
 
     @app.get('/api/images/{artifact_id}')
-    def image(artifact_id: str,_=Depends(member)):
-        with store.tx() as db:
-            if not db.execute('SELECT id FROM artifacts WHERE id=?',(artifact_id,)).fetchone():
-                raise HTTPException(404,'Image not found')
-        return FileResponse(store.root / 'images' / f'{artifact_id}.png',media_type='image/png')
+    def image(artifact_id: str,credential=Depends(member)):
+        user,device = credential
+        return FileResponse(store.image_path(artifact_id,user,device),media_type='image/png')
 
     web_dir = Path(os.getenv('POCKETGRID_WEB_DIR','apps/web/dist'))
     if web_dir.exists():

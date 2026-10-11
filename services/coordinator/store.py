@@ -7,9 +7,11 @@ single-node prototype; do not run replicas against different volumes.
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import io
 import json
+import os
 import secrets
 import sqlite3
 import threading
@@ -39,6 +41,14 @@ def fail(status: int, detail: str):
 PLANNING_CLAIM_SECONDS = 150
 PLANNING_ATTEMPTS = 3
 ACTIVE = ('planning', 'queued', 'running')
+# Link codes avoid characters that are easy to misread when typed.
+LINK_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ'
+LINK_SECONDS = 120
+DEVICE_WORDS = {'python': 'laptop', 'ios': 'phone', 'browser': 'device'}
+
+
+def password_hash(password: str, salt: bytes) -> str:
+    return hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32).hex()
 
 
 class Store:
@@ -58,9 +68,20 @@ class Store:
             CREATE TABLE IF NOT EXISTS ledger(id TEXT PRIMARY KEY,user_id TEXT,job_id TEXT,kind TEXT,amount INTEGER,created_at REAL,note TEXT);
             CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id TEXT,device_id TEXT,job_id TEXT,kind TEXT,message TEXT,created_at REAL);
             CREATE TABLE IF NOT EXISTS artifacts(id TEXT PRIMARY KEY,job_id TEXT,task_id TEXT,sha256 TEXT);
+            CREATE TABLE IF NOT EXISTS user_sessions(id TEXT PRIMARY KEY,user_id TEXT,token TEXT UNIQUE,client_name TEXT,created_at REAL,last_used_at REAL,revoked_at REAL);
+            CREATE TABLE IF NOT EXISTS link_codes(code TEXT PRIMARY KEY,user_id TEXT,expires_at REAL,used_at REAL);
+            CREATE TABLE IF NOT EXISTS credentials(user_id TEXT PRIMARY KEY,username TEXT UNIQUE,salt TEXT,hash TEXT,updated_at REAL);
             CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status,kind);
             CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
+            CREATE INDEX IF NOT EXISTS sessions_user ON user_sessions(user_id);
             ''')
+            # Tokens issued before multi-device sign-in keep working as sessions.
+            for row in db.execute('SELECT id,token,created FROM users WHERE token IS NOT NULL').fetchall():
+                db.execute("INSERT OR IGNORE INTO user_sessions(id,user_id,token,client_name,created_at) VALUES(?,?,?,'Earlier sign-in',?)",
+                           (uid(), row['id'], row['token'], row['created']))
+            db.execute('UPDATE users SET token=NULL WHERE token IS NOT NULL')
+        # Older iOS/Android finishers draw the teal frame; accept it until they all ship.
+        self.accept_legacy_frame = os.getenv('POCKETGRID_ACCEPT_LEGACY_FRAME', '1') != '0'
 
     @contextmanager
     def tx(self):
@@ -85,26 +106,93 @@ class Store:
     def ledger(self, db, user_id, job_id, kind, amount, note):
         db.execute('INSERT INTO ledger VALUES(?,?,?,?,?,?,?)', (uid(), user_id, job_id, kind, amount, self.clock(), note))
 
-    def session(self, name):
-        token, user_id = secrets.token_urlsafe(32), uid()
+    def new_session(self, db, user_id, client_name=None):
+        token, session_id = secrets.token_urlsafe(32), uid()
+        db.execute('INSERT INTO user_sessions(id,user_id,token,client_name,created_at,last_used_at) VALUES(?,?,?,?,?,?)',
+                   (session_id, user_id, digest(token), client_name or '', self.clock(), self.clock()))
+        user = db.execute('SELECT id,name,balance FROM users WHERE id=?', (user_id,)).fetchone()
+        return {'token': token, 'session_id': session_id, 'user': {'id': user['id'], 'name': user['name']}, 'balance': user['balance']}
+
+    def session(self, name=None, client_name=None):
+        user_id = uid()
+        name = name or 'Guest ' + ''.join(secrets.choice(LINK_ALPHABET) for _ in range(4))
         with self.tx() as db:
-            db.execute('INSERT INTO users VALUES(?,?,?,?,?)', (user_id, name, digest(token), 100, self.clock()))
+            db.execute('INSERT INTO users VALUES(?,?,?,?,?)', (user_id, name, None, 100, self.clock()))
             self.ledger(db, user_id, None, 'demo_grant', 100, 'Sandbox grant; no cash value')
-        return {'token': token, 'user': {'id': user_id, 'name': name}, 'balance': 100}
+            return self.new_session(db, user_id, client_name)
 
     def auth(self, token, kind='session'):
-        table = 'users' if kind == 'session' else 'devices'
         with self.tx() as db:
-            row = db.execute(f'SELECT * FROM {table} WHERE token=?', (digest(token),)).fetchone()
+            if kind == 'session':
+                row = db.execute('SELECT u.*,s.id AS session_id,s.last_used_at FROM user_sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.revoked_at IS NULL',
+                                 (digest(token),)).fetchone()
+                if row and (row['last_used_at'] or 0) < self.clock() - 60:
+                    db.execute('UPDATE user_sessions SET last_used_at=? WHERE id=?', (self.clock(), row['session_id']))
+            else:
+                row = db.execute('SELECT * FROM devices WHERE token=?', (digest(token),)).fetchone()
             if not row:
                 fail(401, 'Invalid or missing credential')
             return dict(row)
 
+    def create_link_code(self, user_id):
+        code = ''.join(secrets.choice(LINK_ALPHABET) for _ in range(10))
+        expires = self.clock() + LINK_SECONDS
+        with self.tx() as db:
+            db.execute('DELETE FROM link_codes WHERE user_id=? AND used_at IS NULL', (user_id,))
+            db.execute('INSERT INTO link_codes VALUES(?,?,?,NULL)', (digest(code), user_id, expires))
+        return {'code': code, 'expires_at': expires}
+
+    def redeem_link_code(self, code, client_name=None):
+        code = code.upper().replace('-', '').replace(' ', '')
+        with self.tx() as db:
+            row = db.execute('SELECT * FROM link_codes WHERE code=? AND used_at IS NULL AND expires_at>?', (digest(code), self.clock())).fetchone()
+            if not row:
+                fail(400, 'Link code invalid or expired')
+            db.execute('UPDATE link_codes SET used_at=? WHERE code=?', (self.clock(), row['code']))
+            return self.new_session(db, row['user_id'], client_name)
+
+    def set_credentials(self, user_id, username, password, current_password=None):
+        username = username.strip().lower()
+        with self.tx() as db:
+            existing = db.execute('SELECT * FROM credentials WHERE user_id=?', (user_id,)).fetchone()
+            if existing and not (current_password and secrets.compare_digest(
+                    password_hash(current_password, bytes.fromhex(existing['salt'])), existing['hash'])):
+                fail(403, 'Current password required to change this login')
+            taken = db.execute('SELECT user_id FROM credentials WHERE username=?', (username,)).fetchone()
+            if taken and taken['user_id'] != user_id:
+                fail(409, 'Username taken')
+            salt = secrets.token_bytes(16)
+            db.execute('INSERT OR REPLACE INTO credentials VALUES(?,?,?,?,?)', (user_id, username, salt.hex(), password_hash(password, salt), self.clock()))
+        return {'username': username}
+
+    def login(self, username, password, client_name=None):
+        with self.tx() as db:
+            row = db.execute('SELECT * FROM credentials WHERE username=?', (username.strip().lower(),)).fetchone()
+            # Hash even for unknown names so timing does not reveal which part was wrong.
+            candidate = password_hash(password, bytes.fromhex(row['salt']) if row else b'pocketgrid-none!')
+            if not row or not secrets.compare_digest(candidate, row['hash']):
+                fail(401, 'Incorrect username or password')
+            return self.new_session(db, row['user_id'], client_name)
+
+    def sessions(self, user_id, current_id):
+        with self.tx() as db:
+            rows = db.execute('SELECT * FROM user_sessions WHERE user_id=? AND revoked_at IS NULL ORDER BY created_at', (user_id,)).fetchall()
+            return {'sessions': [{'id': r['id'], 'client_name': r['client_name'] or '', 'created_at': r['created_at'],
+                                  'last_used_at': r['last_used_at'], 'current': r['id'] == current_id} for r in rows]}
+
+    def revoke_session(self, user_id, session_id):
+        with self.tx() as db:
+            if db.execute('UPDATE user_sessions SET revoked_at=? WHERE id=? AND user_id=? AND revoked_at IS NULL',
+                          (self.clock(), session_id, user_id)).rowcount != 1:
+                fail(404, 'Session not found')
+        return {'ok': True}
+
     def auth_any(self, token):
+        """Returns (user, None) for a member session or (None, device) for a device token."""
         try:
-            return self.auth(token)
+            return self.auth(token), None
         except HTTPException:
-            return self.auth(token, 'device')
+            return None, self.auth(token, 'device')
 
     def register(self, user_id, name, kind, capabilities, limits):
         token, device_id = secrets.token_urlsafe(32), uid()
@@ -472,6 +560,8 @@ class Store:
         else:
             task['source_url'] = None
         task['output_url'] = f'/api/images/{task["artifact_id"]}' if task['artifact_id'] else None
+        device = db.execute('SELECT kind FROM devices WHERE id=?', (task['device_id'],)).fetchone() if task['device_id'] else None
+        task['device_kind'] = device['kind'] if device else None
         return task
 
     def claim(self, device_id):
@@ -553,11 +643,11 @@ class Store:
                 source = db.execute('SELECT artifact_id FROM tasks WHERE id=?', (task['source_task_id'],)).fetchone()
                 with Image.open(self.root / 'images' / f'{source["artifact_id"]}.png') as original:
                     expected = original.convert('RGB')
-                from PIL import ImageDraw
-                draw = ImageDraw.Draw(expected)
-                draw.rectangle((0, 0, expected.width-1, expected.height-1), outline=(36,203,166), width=4)
                 if image.tobytes() != expected.tobytes():
-                    fail(422, 'Export pixel verification failed')
+                    from PIL import ImageDraw
+                    ImageDraw.Draw(expected).rectangle((0, 0, expected.width-1, expected.height-1), outline=(36,203,166), width=4)
+                    if not self.accept_legacy_frame or image.tobytes() != expected.tobytes():
+                        fail(422, 'Export pixel verification failed')
             artifact_id = uid()
             path = self.root / 'images' / f'{artifact_id}.png'
             # Re-encode to remove arbitrary metadata from contributed files.
@@ -609,21 +699,119 @@ class Store:
         # Only expose public job fields. A live lease is a worker credential.
         for task in job['tasks']:
             task.pop('lease_id', None)
-        job['images'] = [{'task_id': t['id'], 'url': t['output_url'], 'variant': t['variant'], 'stage': t['kind']} for t in job['tasks'] if t['output_url']]
+        job['images'] = [{'task_id': t['id'], 'url': t['output_url'], 'variant': t['variant'], 'stage': t['kind'],
+                          'verified': t['kind'] == 'image_finalize'} for t in job['tasks'] if t['output_url']]
         job['receipt'] = {'budget': job['budget'], 'contributor_total': job['spent']-job['fee'], 'platform_fee': job['fee'], 'refund': job['refunded'], 'total_charged': job['spent']} if job['status'] in ('completed','cancelled','failed') else None
         return job
+
+    def grid_devices(self, db=None):
+        """Every device, for the planner and grid counts; never returned to a member."""
+        if db is None:
+            with self.tx() as db:
+                self.sweep(db)
+                return self.grid_devices(db)
+        return [self.device(db, row['id']) for row in db.execute('SELECT id FROM devices ORDER BY rowid')]
+
+    def grid_counts(self, db):
+        devices = [d for d in self.grid_devices(db) if d['online']]
+        ready = lambda kind: sum(1 for d in devices if d['enabled'] and kind in d['capabilities'])
+        return {'connected': len(devices), 'ready_to_create': ready('image_generate'), 'ready_to_finish': ready('image_finalize')}
+
+    def privacy(self, db, viewer_id):
+        rows = db.execute('SELECT id,name,owner_id FROM devices').fetchall()
+        own = {r['id'] for r in rows if r['owner_id'] == viewer_id}
+        own_names = {r['name'] for r in rows if r['owner_id'] == viewer_id}
+        names = sorted({r['name'] for r in rows if r['owner_id'] != viewer_id and r['name'] not in own_names and len(r['name'].strip()) >= 3}, key=len, reverse=True)
+        def scrub(text):
+            text = str(text or '')
+            for name in names:
+                text = text.replace(name, 'a grid device')
+            return text
+        return own, scrub
+
+    def public_job(self, db, job, viewer_id):
+        """A member's view of their own job: other members' devices stay anonymous."""
+        own, scrub = self.privacy(db, viewer_id)
+        job = copy.deepcopy(job)
+        for task in job['tasks']:
+            if task.get('device_id') not in own:
+                task['device_id'] = None
+        plan = job['plan']
+        # Planner traces carry every device's name and identifier.
+        plan.pop('tools', None)
+        plan.pop('reviews', None)
+        plan['explanation'] = scrub(plan.get('explanation'))
+        plan['routes'] = {stage: [d for d in ids if d in own] for stage, ids in plan.get('routes', {}).items()}
+        for route in plan.get('task_routes', {}).values():
+            route['device_ids'] = [d for d in route.get('device_ids', []) if d in own]
+            route['explanation'] = scrub(route.get('explanation'))
+        if plan.get('review', {}).get('error'):
+            plan['review']['error'] = scrub(plan['review']['error'])
+        return job
+
+    def view_job(self, job, viewer_id):
+        with self.tx() as db:
+            return self.public_job(db, job, viewer_id)
+
+    def member_job(self, job_id, user=None, device=None):
+        """GET /jobs/{id}: the owning member, or a device assigned to one of its tasks."""
+        with self.tx() as db:
+            self.sweep(db)
+            row = db.execute('SELECT owner_id FROM jobs WHERE id=?', (job_id,)).fetchone()
+            if user and row and row['owner_id'] == user['id']:
+                return self.public_job(db, self.job(db, job_id), user['id'])
+            if device and row and db.execute('SELECT 1 FROM tasks WHERE job_id=? AND (device_id=? OR last_device_id=?)', (job_id, device['id'], device['id'])).fetchone():
+                return self.public_job(db, self.job(db, job_id), device['owner_id'])
+            fail(404, 'Job not found')
+
+    def image_path(self, artifact_id, user=None, device=None):
+        with self.tx() as db:
+            artifact = db.execute('SELECT a.*,j.owner_id FROM artifacts a JOIN jobs j ON j.id=a.job_id WHERE a.id=?', (artifact_id,)).fetchone()
+            allowed = artifact and (
+                (user and artifact['owner_id'] == user['id'])
+                or (device and db.execute('SELECT 1 FROM tasks WHERE device_id=? AND (id=? OR source_task_id=?)',
+                                          (device['id'], artifact['task_id'], artifact['task_id'])).fetchone()))
+            if not allowed:
+                fail(404, 'Image not found')
+        return self.root / 'images' / f'{artifact_id}.png'
+
+    def public_events(self, db, user_id):
+        own, scrub = self.privacy(db, user_id)
+        jobs = {r['id'] for r in db.execute('SELECT id FROM jobs WHERE owner_id=?', (user_id,))}
+        kinds = {r['id']: r['kind'] for r in db.execute('SELECT id,kind FROM devices')}
+        events = []
+        for row in db.execute('SELECT * FROM events WHERE user_id=? OR job_id IN (SELECT id FROM jobs WHERE owner_id=?) ORDER BY id DESC LIMIT 60', (user_id, user_id)):
+            event = dict(row)
+            mine = event['user_id'] == user_id
+            if not mine and event['kind'] == 'credits_earned':
+                continue  # Another contributor's payment.
+            if event['device_id'] and event['device_id'] not in own:
+                word = DEVICE_WORDS.get(kinds.get(event['device_id']), 'device')
+                event['message'] = {'task_started': f'A grid {word} started work on your images',
+                                    'routing_applied': f'A planner-selected grid {word} took your work',
+                                    'task_reassigned': 'Image work queued again for another device'}.get(event['kind'], f'A grid {word} updated your request')
+                event['device_id'] = None
+            if not mine:
+                event['user_id'] = None
+            if event['job_id'] not in jobs:
+                event['job_id'] = None  # Own device working on someone else's request.
+            event['message'] = scrub(event['message'])
+            events.append(event)
+        return events
 
     def snapshot(self, user_id):
         with self.tx() as db:
             self.sweep(db)
             user = db.execute('SELECT * FROM users WHERE id=?', (user_id,)).fetchone()
+            login = db.execute('SELECT username FROM credentials WHERE user_id=?', (user_id,)).fetchone()
             return {
-                'user': {'id': user['id'], 'name': user['name']}, 'balance': user['balance'],
+                'user': {'id': user['id'], 'name': user['name'], 'username': login['username'] if login else None}, 'balance': user['balance'],
                 'reserved': db.execute("SELECT COALESCE(SUM(budget-spent-refunded),0) FROM jobs WHERE owner_id=?", (user_id,)).fetchone()[0],
                 'earned': db.execute("SELECT COALESCE(SUM(amount),0) FROM ledger WHERE user_id=? AND kind='earned'", (user_id,)).fetchone()[0],
-                'devices': [self.device(db, row['id']) for row in db.execute('SELECT id FROM devices ORDER BY rowid')],
-                'jobs': [self.job(db, row['id']) for row in db.execute('SELECT id FROM jobs ORDER BY created_at DESC LIMIT 30')],
-                'events': [dict(row) for row in db.execute('SELECT * FROM events WHERE user_id=? OR user_id IS NULL OR job_id IN (SELECT id FROM jobs WHERE owner_id=?) ORDER BY id DESC LIMIT 60', (user_id,user_id))],
+                'grid': self.grid_counts(db),
+                'devices': [self.device(db, row['id']) for row in db.execute('SELECT id FROM devices WHERE owner_id=? ORDER BY rowid', (user_id,))],
+                'jobs': [self.public_job(db, self.job(db, row['id']), user_id) for row in db.execute('SELECT id FROM jobs WHERE owner_id=? ORDER BY created_at DESC LIMIT 30', (user_id,))],
+                'events': self.public_events(db, user_id),
                 'ledger': [dict(row) for row in db.execute('SELECT * FROM ledger WHERE user_id=? ORDER BY created_at DESC LIMIT 60', (user_id,))],
                 'pricing': {'generate': 6, 'finalize': 1, 'fee': 1}, 'server_time': self.clock(),
             }
