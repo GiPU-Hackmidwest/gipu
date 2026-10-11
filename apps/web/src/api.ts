@@ -1,4 +1,8 @@
-export const isDesktop = '__TAURI_INTERNALS__' in window;
+export const isTauri = '__TAURI_INTERNALS__' in window;
+// The Tauri CLI sets this while building; it separates phones from the Mac shell that runs the Python worker.
+const tauriPlatform = import.meta.env.TAURI_ENV_PLATFORM;
+export const isMobileApp = isTauri && (tauriPlatform === 'android' || tauriPlatform === 'ios');
+export const isDesktop = isTauri && !isMobileApp;
 export class Api {
   constructor(readonly server: string, readonly token: string) {}
   url(path: string) { return `${this.server.replace(/\/$/, '')}${path.startsWith('/api/') ? path : `/api${path}`}`; }
@@ -15,15 +19,15 @@ export class Api {
 }
 export function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 export async function askNotifications(): Promise<boolean> {
-  if (isDesktop) { const api = await import('@tauri-apps/plugin-notification'); return await api.isPermissionGranted() || await api.requestPermission() === 'granted'; }
+  if (isTauri) { const api = await import('@tauri-apps/plugin-notification'); return await api.isPermissionGranted() || await api.requestPermission() === 'granted'; }
   return 'Notification' in window && await Notification.requestPermission() === 'granted';
 }
 export async function notify(message: string) {
-  if (isDesktop) { const api = await import('@tauri-apps/plugin-notification'); if (await api.isPermissionGranted()) api.sendNotification({ title: 'PocketGrid', body: message }); }
+  if (isTauri) { const api = await import('@tauri-apps/plugin-notification'); if (await api.isPermissionGranted()) api.sendNotification({ title: 'PocketGrid', body: message }); }
   else if ('Notification' in window && Notification.permission === 'granted') new Notification('PocketGrid', { body: message });
 }
 
 export async function copyText(text: string) {
-  if (isDesktop) { const clipboard = await import('@tauri-apps/plugin-clipboard-manager'); await clipboard.writeText(text); }
+  if (isTauri) { const clipboard = await import('@tauri-apps/plugin-clipboard-manager'); await clipboard.writeText(text); }
   else { if (!navigator.clipboard) throw new Error('Clipboard access requires HTTPS or localhost.'); await navigator.clipboard.writeText(text); }
 }

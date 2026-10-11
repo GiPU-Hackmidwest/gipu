@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Api, askNotifications, copyText, errorMessage, isDesktop, notify } from './api';
+import { Api, askNotifications, copyText, errorMessage, isDesktop, isMobileApp, notify } from './api';
 import { BrowserWorker } from './browserWorker';
 import { DesktopWorkerPanel } from './DesktopWorkerPanel';
 import { shouldNotifyEvent } from './eventNotifications';
@@ -23,7 +23,7 @@ export default function App() {
 function SignIn({ onSession }: { onSession: (session: Session) => void }) {
   const [name, setName] = useState('');
   const [code, setCode] = useState('pocketgrid-demo');
-  const [server, setServer] = useState(isDesktop ? 'http://127.0.0.1:8787' : '');
+  const [server, setServer] = useState(isDesktop ? 'http://127.0.0.1:8787' : isMobileApp ? import.meta.env.VITE_DEFAULT_COORDINATOR ?? '' : '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
@@ -35,7 +35,7 @@ function SignIn({ onSession }: { onSession: (session: Session) => void }) {
       onSession({ token: result.token, name: result.user.name, server: normalized });
     } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
   }
-  return <main className="onboarding"><div className="brand">◉ PocketGrid <span>prototype</span></div><h1>Let nearby devices<br />do the work.</h1><p>Generate an image on a participating laptop. Export it on another device. See every task and every credit.</p><form onSubmit={submit} className="panel stack"><h2>Join your demo grid</h2><label>Your name<input value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Alex" maxLength={60} required /></label><label>Grid invite code<input value={code} onChange={e => setCode(e.target.value)} required /></label><label>Coordinator address<input value={server} onChange={e => setServer(e.target.value)} placeholder="Same server as this page" type="text" /><small>{isDesktop ? 'Use your coordinator’s address, including port 8787.' : 'Leave blank for the server hosting this page. On a phone, localhost means the phone.'}</small></label>{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !name.trim()}>{busy ? 'Joining…' : 'Join grid'}</button><small>Joining does not share your device. This invite-only prototype uses sandbox credits. Grid members can see jobs and images.</small></form></main>;
+  return <main className="onboarding"><div className="brand">◉ PocketGrid <span>prototype</span></div><h1>Let nearby devices<br />do the work.</h1><p>Generate an image on a participating laptop. Export it on another device. See every task and every credit.</p><form onSubmit={submit} className="panel stack"><h2>Join your demo grid</h2><label>Your name<input value={name} onChange={e => setName(e.target.value)} autoComplete="name" placeholder="Alex" maxLength={60} required /></label><label>Grid invite code<input value={code} onChange={e => setCode(e.target.value)} autoCapitalize="none" autoCorrect="off" spellCheck={false} required /></label><label>Coordinator address<input value={server} onChange={e => setServer(e.target.value)} inputMode="url" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder={isMobileApp ? 'https://your-coordinator' : 'Same server as this page'} type="text" required={isMobileApp} /><small>{isDesktop ? 'Use your coordinator’s address, including port 8787.' : isMobileApp ? 'Use your coordinator’s https:// address.' : 'Leave blank for the server hosting this page. On a phone, localhost means the phone.'}</small></label>{error && <p className="error" role="alert">{error}</p>}<button disabled={busy || !name.trim()}>{busy ? 'Joining…' : 'Join grid'}</button><small>Joining does not share your device. This invite-only prototype uses sandbox credits. Grid members can see jobs and images.</small></form></main>;
 }
 
 function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => void }) {
@@ -56,7 +56,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   const credentialKey = `pocketgrid.browser.${session.server}.${session.token.slice(0, 12)}`;
   const credential = useRef<DeviceCredential | null>(null);
   const [limits, setLimits] = useState(defaultLimits);
-  const [deviceName, setDeviceName] = useState(`${session.name}’s ${isDesktop ? 'desktop window' : 'browser'}`);
+  const [deviceName, setDeviceName] = useState(`${session.name}’s ${isDesktop ? 'desktop window' : isMobileApp ? 'phone app' : 'browser'}`);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const request = { revision: jobSync.current.revision, sequence: ++refreshSequence.current };
@@ -142,7 +142,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
   }
   async function pauseLocal() { contributionEpoch.current += 1; await action('share', async () => { worker.current?.stop(); if (credential.current) await api.request(`/devices/${credential.current.id}`, { enabled: false }, 'PATCH'); setWorkerMessage('Sharing paused. Unfinished work can move to another device.'); }); }
   const localDevice = state?.devices.find(device => device.id === localId);
-  return <div className="shell"><header><div className="brand">◉ PocketGrid <span>{isDesktop ? 'Mac prototype' : 'prototype'}</span></div><div className="header-actions"><span>{session.name}</span><button className="subtle" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears below.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button><button className="subtle" onClick={onSignOut}>Leave</button></div></header>
+  return <div className="shell"><header><div className="brand">◉ PocketGrid <span>{isDesktop ? 'Mac prototype' : isMobileApp ? 'app prototype' : 'prototype'}</span></div><div className="header-actions"><span>{session.name}</span><button className="subtle" onClick={() => { void action('notifications', async () => { const granted = await askNotifications(); notifications.current = granted; setNotifying(granted); if (!granted) throw new Error('Notifications are unavailable or not permitted. Activity still appears below.'); }); }}>{notifying ? 'Notifications on' : 'Enable notifications'}</button><button className="subtle" onClick={onSignOut}>Leave</button></div></header>
     <div className="intro"><div><p className="eyebrow">Your devices. Real work.</p><h1>What should the grid make?</h1><p>Local image generation, shared export work, and a clear receipt.</p></div><div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div><small>Sandbox credits · no cash value</small></div></div>
     {error && <div className="error banner" role="alert">{error}</div>}
     <div className="main-grid"><section className="panel"><CreateJob api={api} state={state} onCreated={onJobResponse} /></section><section className="panel stack"><div className="section-title"><h2>Share this device</h2><span className={`badge ${localDevice?.enabled ? 'good' : ''}`}>{localDevice?.enabled ? 'Sharing' : 'Paused'}</span></div><p>This window can export images with a verified teal frame. A Python laptop worker runs the image model.</p><label>Device name<input value={deviceName} disabled={!!localId} onChange={e => setDeviceName(e.target.value)} maxLength={80} /></label><LimitsForm value={limits} onChange={setLimits} /><div className="button-row"><button disabled={!!busy} onClick={() => void startLocal()}>{localDevice?.enabled ? 'Apply limits / restart' : 'Start sharing'}</button><button className="secondary" disabled={!!busy || !localDevice?.enabled} onClick={() => void pauseLocal()}>Pause now</button></div><p className="worker-status" role="status">{workerMessage}</p><small>One export at a time. Foreground only. Switching tabs or closing the window pauses sharing. Pixel and time limits are enforced; this is not a CPU percentage cap.</small></section></div>
