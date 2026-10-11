@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: v0.4.0 Mac/Android draft installers built; install checks/publication pending; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: Arboy's later direction supersedes the original pair; logo orange with dark ink measures 5.34:1; native Mac inspected |
@@ -36,6 +36,14 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · manual v0.4.0 build (`docs/release-0.4-handoff`)
+
+- **Coordination:** Arboy asked to run releases from this chat. Dispatched the existing manual-only Release workflow from main `cc506cd`, version `0.4.0`, platforms `both`, draft release enabled. Run: https://github.com/pocketgrid-hackmidwest/pocketgrid/actions/runs/38137728928. No workflow triggers or signing settings changed.
+- **Scope:** Mac Apple-silicon DMG and Android APK, including leaderboard, test-mode credit checkout and bundled desktop icon. No iOS or Windows installer job exists in this workflow.
+- **Verification:** all four workflow jobs succeeded. The Mac packaging job verified the DMG; the final app after worker-library deduplication measured 658M on the runner. Draft assets include `GiPU-0.4.0-macos-arm64.dmg` (287,282,501 bytes), `GiPU-0.4.0-android-arm64-debug.apk` (133,789,875 bytes), and `SHA256SUMS.txt`. Downloaded checksums match GitHub's uploaded asset digests, including the checksum file itself. The large installers were not downloaded or installed locally in this pass; no fresh physical-device result is claimed. Installation/feature notes were added to the draft.
+- **Handoff:** review and test installers before publication. A draft does not change the public latest release or deploy the coordinator.
+- **Open questions:** none.
 
 ### 2026-10-11 · Codex · remove leftover merge marker (`fix/progress-conflict-marker`)
 
