@@ -1,0 +1,102 @@
+{
+  "coordinator": "Akamai Linode HTTPS",
+  "deployed_commit": "01cd02f",
+  "planner": {
+    "mode": "akamai",
+    "available": true,
+    "provider_model": "hackathon-chat"
+  },
+  "observed_date": "2026-10-10 America/Chicago",
+  "created_utc": "2026-10-11T02:06:11Z",
+  "workload": "Tiny-SD generation on a physical laptop, browser-canvas export on a physical phone",
+  "job_id": "01ae197431a24179816d965c2b9bf665",
+  "request": {
+    "submitted_from": "PocketGrid iOS app on a physical iPhone",
+    "prompt": "Chair",
+    "count": 1,
+    "width": 256,
+    "height": 256,
+    "steps": 12,
+    "budget": 10,
+    "use_agent": true
+  },
+  "planning": {
+    "acknowledged_status": "planning",
+    "status": "done",
+    "attempts": 1,
+    "seconds_to_queued": 15.057,
+    "tools": ["inspect_devices", "quote_job", "submit_job", "inspect_job"],
+    "routes": {
+      "image_generate": ["Laptop 2", "Arboy Mac"],
+      "image_finalize": []
+    },
+    "explanation": "Selecting both eligible image_generate candidates for the generation stage; no eligible image_finalize candidates exist, so that stage is left empty.",
+    "dispatch_error": null,
+    "terminal_review": "done"
+  },
+  "tasks": [
+    {
+      "kind": "image_generate",
+      "status": "completed",
+      "attempts": 1,
+      "device_id": "edfb95040c4d4290b999f011c0ef57eb",
+      "device": "Arboy Mac",
+      "device_kind": "python",
+      "strands_selected": true,
+      "price": 6,
+      "metrics": {
+        "backend": "mps",
+        "model": "segmind/tiny-sd",
+        "elapsed_seconds": 1.049
+      },
+      "artifact_sha256": "390db5800721a165f3973c4adeabd4fc2e7e5b66e0685ed904907da45bf5df9a"
+    },
+    {
+      "kind": "image_finalize",
+      "status": "completed",
+      "attempts": 1,
+      "device_id": "b08441f512714da1af44fd42d33b11a1",
+      "device": "Sithabiso Hlanze Phone's browser",
+      "device_kind": "browser",
+      "strands_selected": false,
+      "price": 1,
+      "metrics": {
+        "backend": "browser-canvas",
+        "elapsed_seconds": 0.411
+      },
+      "artifact_sha256": "0fa1191e28a5776c79070ddd34d124158a5fb3a42d5715ba499af2d74fdccb10"
+    }
+  ],
+  "event_seconds_after_submission": [
+    ["job_planning", 0.0],
+    ["job_created", 15.057],
+    ["task_started", 15.702],
+    ["routing_applied", 15.702],
+    ["credits_earned", 17.072],
+    ["task_started", 212.012],
+    ["credits_earned", 212.756],
+    ["job_completed", 212.756],
+    ["agent_reviewed", 215.882]
+  ],
+  "receipt": {
+    "budget": 10,
+    "contributor_total": 7,
+    "platform_fee": 1,
+    "refund": 2,
+    "total_charged": 8
+  },
+  "exact_export_pixels_verified": true,
+  "contributing_physical_devices": 2,
+  "other_physical_devices_online": [
+    "Laptop 2: generation-only Python worker on an Apple M3 Pro Mac (selected by Strands, idle)",
+    "Luc iPhone Testing: iOS app, requester; its export sharing was paused"
+  ],
+  "passed": true,
+  "scope_limits": [
+    "One image; a single run, not a latency or throughput benchmark. Worker timings exclude model startup.",
+    "The roughly 195-second gap before export was a human wait: no export-capable device was sharing until a phone browser was started. It is not system latency.",
+    "Export ran in a physical phone's browser, not the native iOS app; native iOS finalization on a physical iPhone remains unverified.",
+    "Only one laptop generated; parallel generation across laptops and physical multi-laptop failover were not exercised.",
+    "Generation acceptance checks PNG format and dimensions, not semantic correctness or honest computation; export acceptance checks every pixel."
+  ]
+}

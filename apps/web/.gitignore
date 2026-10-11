@@ -2,6 +2,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 src-tauri/target/
-src-tauri/gen/
+# Commit the Android Studio project; its own .gitignore excludes builds, keys and local SDK paths.
+src-tauri/gen/*
+!src-tauri/gen/android/
 .cargo-cache/
 .npm-cache/

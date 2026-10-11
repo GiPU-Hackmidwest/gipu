@@ -1,36 +1,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod worker;
-
-use tauri::Manager;
-
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
-        .manage(worker::WorkerManager::default())
-        .invoke_handler(tauri::generate_handler![
-            worker::worker_defaults,
-            worker::connect_worker,
-            worker::worker_status,
-            worker::disconnect_worker,
-        ])
-        .on_window_event(|window, event| {
-            if matches!(
-                event,
-                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
-            ) {
-                window.state::<worker::WorkerManager>().disconnect();
-            }
-        })
-        .build(tauri::generate_context!())
-        .expect("PocketGrid desktop could not start")
-        .run(|app, event| {
-            if matches!(
-                event,
-                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
-            ) {
-                app.state::<worker::WorkerManager>().disconnect();
-            }
-        });
+    pocketgrid_desktop_lib::run()
 }
