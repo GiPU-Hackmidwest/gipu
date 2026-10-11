@@ -37,7 +37,7 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
-### 2026-10-11 · Codex · corrected Mac draft and app launch (`docs/mac-release-0.4.1`)
+### 2026-10-11 · Codex · corrected Mac draft and app launch (PR #46, `docs/mac-release-0.4.1`)
 
 - **Build:** packaging fix merged in [PR #45](https://github.com/pocketgrid-hackmidwest/pocketgrid/pull/45), main `d317a38`. Dispatched the existing manual-only Release workflow for version `0.4.1`, Mac only, draft enabled. [Run 38140864359](https://github.com/pocketgrid-hackmidwest/pocketgrid/actions/runs/38140864359) succeeded; the Android job was skipped. No workflow triggers or signing secrets changed.
 - **Artifact verification:** downloaded `GiPU-0.4.1-macos-arm64.dmg` (284,784,771 bytes); SHA-256 `e8111d3104fca8f65f8b827f72a4508a76fe68dbd8b61042b811fe0116a1558d` matches both the uploaded digest and `SHA256SUMS.txt`. `hdiutil verify` passed. The mounted app reports version 0.4.1 with 5,100 sealed resource entries, and `codesign --verify --deep --strict` passed on both the mounted app and its copied installation. Its bundled worker ran `--help`; runner app size was 660M.
