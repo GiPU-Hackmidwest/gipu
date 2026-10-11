@@ -6,6 +6,7 @@ import UserNotifications
 
 private struct SavedSession: Codable {
     let server: String; let token: String; let deviceID: String; let deviceToken: String
+    var userID: String? = nil
 }
 
 private enum SessionStore {
@@ -20,13 +21,19 @@ private enum SessionStore {
         guard SecItemCopyMatching(match as CFDictionary, &result) == errSecSuccess else { return nil }
         return result as? Data
     }
-    static func save(_ data: Data?) {
-        SecItemDelete(query as CFDictionary)
-        guard let data else { return }
+    @discardableResult
+    static func save(_ data: Data?) -> Bool {
+        guard let data else {
+            let status = SecItemDelete(query as CFDictionary)
+            return status == errSecSuccess || status == errSecItemNotFound
+        }
+        let update = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if status != errSecItemNotFound { return status == errSecSuccess }
         var item = query
         item[kSecValueData as String] = data
         item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        SecItemAdd(item as CFDictionary, nil)
+        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
     }
 }
 
@@ -35,6 +42,8 @@ final class GridModel: ObservableObject {
     @Published var server = "https://66-228-53-243.ip.linodeusercontent.com"
     @Published var name = "My iPhone"
     @Published var joinCode = "pocketgrid-demo"
+    @Published var pendingLink: GridLink?
+    @Published private(set) var accountID: String?
     @Published var connected = false
     @Published var busy = false
     @Published private(set) var submitting = false
@@ -50,6 +59,7 @@ final class GridModel: ObservableObject {
     @Published private(set) var contributionTransition = false
     @Published private var acknowledgedJobs = AcknowledgedJobs()
 
+    private var authGeneration = 0
     private var pendingSubmission: (signature: Data, id: String)?
     private var token = ""
     private var deviceID = ""
@@ -64,14 +74,15 @@ final class GridModel: ObservableObject {
     private var contributionGate = ContributionGate()
     private var snapshotGate = SnapshotGate()
     var api: GridAPI { GridAPI(server: server) }
-    var ownDevice: Device? { snapshot?.devices.first { $0.id == deviceID } }
+    var ownDevice: Device? { snapshot?.ownDevices.first { $0.id == deviceID } }
     var ownJobs: [GridJob] {
-        acknowledgedJobs.merged(with: snapshot?.jobs.filter { $0.owner_id == snapshot?.user.id } ?? [])
+        acknowledgedJobs.merged(with: snapshot?.ownJobs ?? []).filter { $0.owner_id == (snapshot?.user.id ?? accountID) }
     }
 
     init() {
         guard let data = SessionStore.load(), let saved = try? JSONDecoder().decode(SavedSession.self, from: data) else { return }
         server = saved.server; token = saved.token; deviceID = saved.deviceID; deviceToken = saved.deviceToken
+        accountID = saved.userID
         connected = true
         contributionTransition = true
         Task {
@@ -84,20 +95,108 @@ final class GridModel: ObservableObject {
     }
 
     func join() async {
+        await authenticate(server: server, path: "/api/sessions", body: ["name": name, "join_code": joinCode])
+    }
+
+    func receiveLink(_ payload: String) {
+        guard let link = GridLink.parse(payload) else {
+            error = "This is not a valid GiPU code."; return
+        }
+        pendingLink = link
+    }
+
+    func acceptLink(_ link: GridLink) async {
+        pendingLink = nil
+        let path = link.kind == .join ? "/api/sessions" : "/api/sessions/link"
+        let body: [String: Any] = link.kind == .join
+            ? ["join_code": link.code, "name": name]
+            : ["code": link.code, "client_name": "GiPU iPhone"]
+        await authenticate(server: link.server, path: path, body: body)
+    }
+
+    func login(username: String, password: String) async {
+        await authenticate(server: server, path: "/api/sessions/login",
+                           body: ["username": username.trimmingCharacters(in: .whitespacesAndNewlines),
+                                  "password": password, "client_name": "GiPU iPhone"])
+    }
+
+    func redeem(code: String) async {
+        guard let origin = GridLink.normalizeServer(server),
+              let link = GridLink.parse(GridLink(kind: .link, server: origin, code: GridLink.normalizeCode(code)).payload) else {
+            error = "Enter the 10-character link code."; return
+        }
+        await acceptLink(link)
+    }
+
+    private func authenticate(server target: String, path: String, body: [String: Any]) async {
+        guard !busy, let origin = GridLink.normalizeServer(target) else {
+            if !busy { error = "Enter the grid’s http:// or https:// address." }
+            return
+        }
+        authGeneration += 1
+        let ticket = authGeneration
+        let oldAPI = api, oldToken = token, hadSession = connected
         busy = true; error = nil
-        defer { busy = false }
+        defer { if ticket == authGeneration { busy = false } }
+        // Stop old work before changing identity. Failed sign-in leaves that account paused.
+        if hadSession { await pause() }
+        let targetAPI = GridAPI(server: origin)
+        var issuedToken: String?
         do {
-            server = server.trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-            let reply = try await api.json(SessionReply.self, "/api/sessions", token: nil, method: "POST",
-                                           body: ["name": name, "join_code": joinCode])
-            let device = try await api.json(DeviceReply.self, "/api/devices", token: reply.token, method: "POST",
-                                            body: ["name": name, "kind": "ios", "capabilities": ["image_finalize"], "limits": limits.dictionary])
-            token = reply.token; deviceID = device.device.id; deviceToken = device.token
-            SessionStore.save(try JSONEncoder().encode(SavedSession(server: server, token: token, deviceID: deviceID, deviceToken: deviceToken)))
-            connected = true
-            await refresh()
-            startLoops()
-        } catch { self.error = error.localizedDescription }
+            // This is deliberately anonymous, even when replacing another grid/account.
+            let reply = try await targetAPI.json(SessionReply.self, path, token: nil, method: "POST", body: body)
+            issuedToken = reply.token
+            let device = try await targetAPI.json(DeviceReply.self, "/api/devices", token: reply.token, method: "POST",
+                                                  body: ["name": name, "kind": "ios", "capabilities": ["image_finalize"], "limits": limits.dictionary])
+            guard ticket == authGeneration else { throw CancellationError() }
+            let saved = SavedSession(server: origin, token: reply.token, deviceID: device.device.id,
+                                     deviceToken: device.token, userID: reply.user.id)
+            guard SessionStore.save(try JSONEncoder().encode(saved)) else {
+                throw NSError(domain: "GiPU.Keychain", code: 1)
+            }
+            stopLocalWork(); pollTask?.cancel(); heartbeatTask?.cancel()
+            server = origin; token = reply.token; deviceID = device.device.id; deviceToken = device.token
+            accountID = reply.user.id; connected = true; snapshot = nil
+            acknowledgedJobs = AcknowledgedJobs(); snapshotGate = SnapshotGate()
+            seenEvents = []; didLoadEvents = false; notice = nil; error = nil; pendingSubmission = nil
+            if hadSession { _ = try? await oldAPI.data("/api/sessions/logout", token: oldToken, method: "POST", body: [:]) }
+            guard ticket == authGeneration else { return }
+            await refresh(); startLoops()
+        } catch {
+            if let issuedToken { _ = try? await targetAPI.data("/api/sessions/logout", token: issuedToken, method: "POST", body: [:]) }
+            if ticket == authGeneration { self.error = Self.identityError(error) }
+        }
+    }
+
+    func createLinkCode() async throws -> LinkCode {
+        let sessionToken = token
+        let reply = try await api.json(LinkCode.self, "/api/sessions/link-codes", token: sessionToken, method: "POST", body: [:])
+        guard sessionToken == token, connected else { throw CancellationError() }
+        return reply
+    }
+
+    func addLogin(username: String, password: String, currentPassword: String) async throws {
+        let sessionToken = token
+        var body: [String: Any] = ["username": username.trimmingCharacters(in: .whitespacesAndNewlines), "password": password]
+        if !currentPassword.isEmpty { body["current_password"] = currentPassword }
+        _ = try await api.json(LoginReply.self, "/api/account/credentials", token: sessionToken, method: "POST", body: body)
+        guard sessionToken == token, connected else { throw CancellationError() }
+        await refresh()
+    }
+
+    static func identityError(_ error: Error) -> String {
+        if let api = error as? APIError, case let .server(status, _) = api {
+            switch status {
+            case 400: return "This code is invalid or expired. Request a new one."
+            case 401, 403: return "Sign-in failed. Check your details."
+            case 404, 405: return "This grid needs an update for account linking."
+            case 409: return "That username is taken. Choose another."
+            case 422: return "Check the username and password requirements."
+            case 429: return "Too many attempts. Try again in a minute."
+            default: break
+            }
+        }
+        return "Could not sign in or save changes. Check your connection and try again."
     }
 
     @discardableResult
@@ -116,9 +215,10 @@ final class GridModel: ObservableObject {
             if sharing, let device = state.devices.first(where: { $0.id == deviceID }), !device.enabled {
                 stopLocalWork(); stage = "Session ended"
             }
-            for event in state.events {
-                if didLoadEvents && !seenEvents.contains(event.id) && event.shouldNotify(userID: state.user.id, deviceID: deviceID) {
-                    await notify(event)
+            for event in state.ownEvents {
+                if didLoadEvents && !seenEvents.contains(event.id) && event.shouldNotifyScoped(userID: state.user.id, deviceID: deviceID,
+                                                                                              ownJobs: Set(state.ownJobs.map(\.id)), ownDevices: Set(state.ownDevices.map(\.id))) {
+                    await notify(event, for: sessionToken)
                 }
                 seenEvents.insert(event.id)
             }
@@ -353,19 +453,23 @@ final class GridModel: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
-    private func notify(_ event: GridEvent) async {
+    private func notify(_ event: GridEvent, for sessionToken: String) async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
-        guard settings.authorizationStatus == .authorized else { return }
+        guard settings.authorizationStatus == .authorized, sessionToken == token, connected else { return }
         let content = UNMutableNotificationContent()
-        content.title = "GiPU"; content.body = event.message; content.sound = .default
+        content.title = "GiPU"; content.body = event.safeMessage ?? "Activity updated"; content.sound = .default
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: String(event.id), content: content, trigger: nil))
     }
 
     func disconnect() async {
+        authGeneration += 1
+        busy = true
+        defer { busy = false }
         await pause()
+        _ = try? await api.data("/api/sessions/logout", token: token, method: "POST", body: [:])
         pollTask?.cancel(); heartbeatTask?.cancel()
         SessionStore.save(nil)
-        connected = false; snapshot = nil; token = ""; deviceToken = ""; deviceID = ""
+        connected = false; snapshot = nil; accountID = nil; pendingLink = nil; token = ""; deviceToken = ""; deviceID = ""
         acknowledgedJobs = AcknowledgedJobs()
         snapshotGate = SnapshotGate()
         seenEvents = []; didLoadEvents = false; error = nil; notice = nil

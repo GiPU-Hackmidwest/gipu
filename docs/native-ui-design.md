@@ -2,15 +2,15 @@
 
 V1 guide, October 11, 2026. Codex owns Mac/iOS presentation; Claude owns the server, protocol, identity/privacy logic, finalize contract, Android and releases. [V1 plan](v1-plan.md) and [progress](v1-progress.md) supersede earlier design-phase ownership. Preserve existing compute behavior until an agreed contract change merges.
 
-## Current V1 direction (in progress)
+## Current V1 direction
 
-Use **GiPU** in Mac/iOS user-facing text now; keep the existing icon until Phase 0 logo assets arrive. Bundle identifiers and environment names stay unchanged. C4/C5/C6/C13/C14/C15 and the text rename are underway on `feat/v1-simple-controls`, based on merged PR #18. None is marked complete by this guide.
+Use **GiPU** in Mac/iOS user-facing text now; keep the existing icon until Phase 0 logo assets arrive. Bundle identifiers and environment names stay unchanged. C4/C5/C6/C13/C14/C15 are implemented in merged PR #22; the text rename is partial until brand assets arrive. The current `feat/v1-account-ui` work adds account, privacy, count and verification presentation after merged PRs #19–#21. Review and rollout limits are tracked below.
 
 Primary actions use white labels on the deeper orange below. **Developer options** is a separate page, off by default and remembered locally. CPU threads, largest image, measured usage, worker paths and pairing tokens, plus plan/device diagnostics, belong there. Technical settings must retain their existing values when hidden; opening or closing the page cannot start or stop contribution. Keep ordinary receipts and usable failure messages in the main journey.
 
 Contribute presents separate **Create images** and **Finish images** cards, using responsive columns on wide screens and a simple stack on narrow screens. The public controls are plain toggles: turning one on is the explicit Start, and turning it off pauses. First-time model download still asks before fetching roughly 1 GB; downloading or connecting alone must not silently enable work. Retain the connected/paused distinction and native disconnect behavior, with the Mac worker controller mounted across navigation. iOS exposes Finish images and remains foreground-only. The desktop sidebar becomes more compact and orderly. Remove the About this grid panel on both platforms.
 
-QR sign-in/link, privacy-scoped presentation, new aggregate grid counts and the new finalize/shimmer UI depend on Claude's Phase 1 contract and wait for its merged review. Link QR must retain the existing account; Invite QR creates a new account. Pixel-identical lossless PNG is a candidate, not an implemented replacement here. Resolve expiry/errors and old/new finalize stage semantics before changing client behavior.
+Account sign-in/link, private presentation, anonymous grid counts and verification shimmer now use the merged Phase 1 contract. Link QR/code retains the existing account; New account creates a separate account. Link codes expire after 120 seconds and are single-use; sessions end through revocation/logout. Leaving must stop owned contribution before credentials are discarded. The tested pixel-identical iOS encoder is staged for rollout, but runtime finishers retain the legacy frame until compatible hosted deployment is explicitly confirmed. There is no version negotiation: counts or verification fields alone cannot authorize a cutover.
 
 ## Audit and reference translation
 
@@ -18,7 +18,7 @@ The working prototype put requesting, contribution controls, setup instructions 
 
 The supplied three-screen parking reference uses soft gray surfaces, large restrained sans-serif type, rounded sculptural panels, floating pill controls and a single vivid orange action. The revised direction gives PocketGrid a spatial device landscape: simple hardware silhouettes summarize live grid device availability on large smooth surfaces, with controls close to their subject. A contribution arc reflects the real remaining session time from server expiry. Device state, availability and time must come from live data; decorative motion must not suggest work occurred. The prompt and finished image remain prominent. Small screens prioritize the task itself. Dark mode uses darker neutral surfaces with the same orange accent. The native Mac debug app has been built and visually inspected; verification scope is recorded below.
 
-Use the system sans-serif stack on Mac/web and native SwiftUI fonts on iOS. Use direct destination titles rather than promotional slogan headers. Numeric credits align clearly, and supporting labels stay secondary. Avoid filling the screen with uniform dashboard cards: use scale, open space, the live device landscape and a focused control surface to establish hierarchy. Preserve readable contrast instead of copying the reference's faint gray text or white labels on orange. Native iOS tabs, forms, disclosure groups and share controls keep the app familiar. Do not recreate a phone frame or parking imagery inside the product.
+Use the system sans-serif stack on Mac/web and native SwiftUI fonts on iOS. Use direct destination titles rather than promotional slogan headers. Numeric credits align clearly, and supporting labels stay secondary. Avoid filling the screen with uniform dashboard cards: use scale, open space, the live device landscape and a focused control surface to establish hierarchy. Preserve readable contrast instead of copying the reference's faint gray text; white action labels use the deeper accessible orange below. Native iOS tabs, forms, disclosure groups and share controls keep the app familiar. Do not recreate a phone frame or parking imagery inside the product.
 
 ## Clay material refinement
 
@@ -28,7 +28,7 @@ This uses shadow softness, not backdrop blur, glass effects or particles. It add
 
 ## Three journeys (V1 target)
 
-Joining comes first: grid address, name and join code → **Join grid**. Show the connected grid identity afterward. Sharing remains off.
+Sign-in comes first: scan/paste a Link QR or type its code to keep an existing account; use New account for a separate account, or password sign-in after adding a login. Keep the grid address and manual fallback available without surrounding instructions. Camera access is requested only after Scan QR. Show the connected account afterward. Sharing remains off.
 
 | Destination | Primary journey | Details on demand |
 | --- | --- | --- |
@@ -36,7 +36,7 @@ Joining comes first: grid address, name and join code → **Join grid**. Show th
 | Contribute | Mac: consent to one-time model download if needed → Create images on/off or Finish images on/off. iPhone: Finish images on/off; stay foregrounded. | Developer options: limits, worker setup, measurements and device diagnostics |
 | Activity | Recent work, earned credits and notifications | Ledger entries and accounting detail |
 
-The device landscape is functional: counts derive from live grid state, while device controls identify each actual device and its connected/sharing state. A remaining-time arc must show unknown or paused state honestly and must not invent progress. Failed and cancelled requests remain visible. Cancellation preserves accepted work and returns unused credits. A refresh error must not erase an acknowledged request or revive a cancelled one. Device labels distinguish offline, connected/paused, loading and sharing; neither joining nor connecting implies contribution.
+The device landscape is functional: anonymous connected/ready counts come from `state.grid`, while contribution controls identify only the current account’s devices. Missing or invalid counts show unavailable, never an invented zero or a count of only local devices. Public Activity uses generic labels, and client presentation filters jobs/devices to the current account; server authorization remains necessary. One result is shown per variant, preferring explicit verification. Only `verified: false` activates shimmer, `true` confirms verification, and missing verification stays neutral. Respect reduced motion. A remaining-time arc must show unknown or paused state honestly and must not invent progress. Failed and cancelled requests remain visible. Cancellation preserves accepted work and returns unused credits. A refresh error must not erase an acknowledged request or revive a cancelled one. Device labels distinguish offline, connected/paused, loading and sharing; neither joining nor connecting implies contribution.
 
 ## Minimal text rule
 
@@ -46,7 +46,7 @@ Use **Create images** and **Finish images** for contribution toggles, with conci
 
 ## Shared tokens and contrast
 
-V1 target tokens below replace the earlier dark-on-bright-orange action pair. Application and rendered verification are in progress. Light colors align across web and iOS; each platform has a distinct adaptive dark palette:
+V1 tokens below replace the earlier dark-on-bright-orange action pair. Mac/browser controls have been inspected; iOS builds passed, while rendered V1 and comprehensive accessibility checks remain outstanding. Light colors align across web and iOS; each platform has a distinct adaptive dark palette:
 
 | Token | Light web/iOS | Dark web | Dark iOS |
 | --- | --- | --- | --- |
@@ -58,7 +58,7 @@ V1 target tokens below replace the earlier dark-on-bright-orange action pair. Ap
 | Primary action | `#C34400` | `#C34400` | `#C34400` |
 | Action text | `#FFFFFF` | `#FFFFFF` | `#FFFFFF` |
 
-Calculated sRGB relative-luminance contrast for the opaque target token pairs:
+Calculated sRGB relative-luminance contrast for the opaque token pairs:
 
 | Text / background | Ratio |
 | --- | --- |
@@ -94,9 +94,18 @@ The Android workstream owns native credentials, notifications, save/share, lifec
 
 ## Verification scope
 
-### V1 simple controls
+### V1 account/privacy UI (current review)
 
-Implementation is in progress. The action contrast above was calculated from the proposed tokens; no V1 build, rendered-screen or live-flow verification is recorded yet. The results below predate V1 and retain their original scope.
+- Shared changes add `qrcode.react` 4.2.0 for local SVG QR rendering and macOS-only `security-framework` 3.7 for Keychain. `SessionStore` remains the platform boundary. `ApiError.status` supports revoked-session handling; shared URL validation rejects embedded credentials/malformed origins. No QR service receives account-link contents. Mac migration preserves an existing account before removing the earlier local token.
+- 65 frontend tests passed, including five storage and ten identity checks. The native Mac build passed; Rust passed 16 with one ignored fixture. Two real browser origins linked a new account into a second client with the same 100-credit balance. The native Mac app migrated an existing 99-credit account to Keychain. A real teapot request used that other account’s native Mac for generation and the linked browser for finishing: both linked clients showed the same image and 93 available / 0 reserved / 1 earned. The Mac account showed 105 available / 13 earned, retained only its own earlier cat image, and did not show the other account’s teapot. Activity labels were generic. Native relaunch preserved the 105-credit account; Show QR rendered and Sign out returned to sign-in. Captures are `outputs/v1-mac-account.png` and `outputs/v1-linked-account-result.png`. Shimmer selection/CSS is tested, but the transient animation was not captured. The final foreign-earnings presentation regression remains under check; the count above covers the completed suite.
+- iOS arm64/x86_64 simulator and unsigned arm64 device builds passed, along with IdentityPrivacy, JobStatus, LifecycleRace and 17 NotificationOwnership checks. The staged invisible encoder preserved 65,536 RGB pixels for RGB, RGBA and indexed-color inputs; size rejection and production legacy-frame parity passed. Runtime continues to call the legacy finalizer pending confirmed deployment.
+- CoreSimulatorService sandbox access blocked current rendered iOS testing. Camera scanning and physical-phone behavior are unverified. Brand assets, release distribution, hosted rollout and comprehensive accessibility review remain outstanding; this is not full V1 sign-off.
+
+### V1 simple controls (merged #22)
+
+Production web and bundled Mac builds passed with 50 frontend tests. Actual Mac Create images / Finish images toggles survived navigation and Developer options changes, then paused; reopening left sharing off. A real local image completed with receipt `10 = 7 contributors + 1 fee + 2 refunded`. Browser Developer options persisted across reload, and the 320px layout had no horizontal overflow. iOS builds and status/lifecycle/notification harnesses passed, without a rendered V1 or physical-phone claim.
+
+The following sections are historical pre-V1 checks and retain their original scope. In particular, the earlier missing Android SDK describes that pass; PR #21 later recorded a native Android emulator build/journey in the progress log.
 
 ### Merge integration
 

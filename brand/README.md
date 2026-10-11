@@ -1,10 +1,10 @@
 # GiPU brand
 
-The product name is **GiPU**: capital G, P and U with a lowercase i. The Tauri app icons use this mark; the product name, bundle identifiers and docs still say PocketGrid until the rename is agreed across both workstreams.
+The product name is **GiPU**: capital G, P and U with a lowercase i. Use GiPU in user-visible copy and app names. Bundle identifiers, environment variables and source paths stay unchanged, as agreed in `AGENTS.md`.
 
 ## Mark
 
-The icon is a geometric G whose crossbar is an orange **live dot**. The same dot sits on the i in the wordmark. Orange marks a device that is sharing, the same meaning it has in the app, so the dot appears once per lockup and is never recoloured.
+The icon is a geometric G whose crossbar is an orange **live dot**. The same dot sits on the i in the wordmark. The dot appears once per lockup and is never recoloured. It is part of the static brand; sharing state is shown separately by the app controls.
 
 | File | Use |
 | --- | --- |
@@ -29,7 +29,7 @@ The icon is a geometric G whose crossbar is an orange **live dot**. The same dot
 | Ink on dark | `#F1F3F6` |
 | Light tile | `#F4F6F8` |
 
-These match the shared UI tokens in [native UI design](../docs/native-ui-design.md).
+Brand orange stays `#FF5A09`. The accessible action colour is the deeper `#C34400` with white labels; see [native UI design](../docs/native-ui-design.md).
 
 ## Usage
 

@@ -81,3 +81,11 @@ test('the web session store ignores corrupt values', async () => {
   await store.clear();
   assert.equal(await store.load(), null);
 });
+
+
+test('grid addresses reject embedded credentials and invalid origins', () => {
+  for (const value of ['https://user:secret@grid.example', 'https://grid.example:bad', 'https://\\other.example', 'https://grid.example/path']) {
+    assert.throws(() => normalizeServer(value));
+    assert.equal(parseGridLink(`gipu://join?grid=${encodeURIComponent(value)}&code=demo`), null);
+  }
+});
