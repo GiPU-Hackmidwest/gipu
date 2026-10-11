@@ -1,8 +1,10 @@
 FROM node:22-bookworm-slim AS web
-WORKDIR /web
+# Mirror the repository layout: the UI imports the logo from ../../../brand.
+WORKDIR /src/apps/web
 COPY apps/web/package*.json ./
 RUN npm ci
 COPY apps/web/ ./
+COPY brand/ /src/brand/
 RUN npm run build
 
 FROM python:3.11-slim
@@ -11,7 +13,7 @@ WORKDIR /app
 COPY services/coordinator/requirements.lock /tmp/requirements.lock
 RUN pip install --no-cache-dir -r /tmp/requirements.lock && useradd --uid 10001 --create-home pocketgrid && mkdir /data && chown pocketgrid /data
 COPY services/ ./services/
-COPY --from=web /web/dist ./apps/web/dist/
+COPY --from=web /src/apps/web/dist ./apps/web/dist/
 USER pocketgrid
 EXPOSE 8787
 HEALTHCHECK --interval=15s --timeout=3s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8787/api/health')"
