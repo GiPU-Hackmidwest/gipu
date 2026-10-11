@@ -36,6 +36,23 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · manual-only release workflow (branch `ci/manual-release-workflow`)
+
+- **Decision (Sithabo, 2026-10-11):** restore a GitHub build workflow, but manual-only. Arboy removed the automatic version for cost. This one has **no push, tag or PR triggers**; it runs only from Actions → Release → Run workflow. `AGENTS.md` (release cost constraint), `docs/v1-plan.md` and `docs/releasing.md` now record this. Adding automatic triggers or removing the workflow needs both Sithabo and Arboy.
+- **`.github/workflows/release.yml`.** Inputs:
+  - `version`;
+  - `platforms`: `android` (default, Linux only), `macos` or `both`;
+  - `draft_release`: creates a draft `v<version>` at the run's commit, or adds files to an existing draft. It refuses to touch a published release.
+
+  The build steps are the same as the earlier verified ones (the DMG step now also runs `hdiutil verify`). The decoded signing key is deleted after the build. Without the signing secrets it builds a debug-signed APK and warns.
+- **Repository variable** `GIPU_DEFAULT_GRID` is set to `https://66-228-53-243.ip.linodeusercontent.com`.
+- **Verification:**
+  - The YAML parses with `workflow_dispatch` as the only trigger.
+  - The draft-release script, run locally against a stubbed `gh`, creates a draft when none exists, uploads with `--clobber` to an existing draft, and exits 1 without calling `gh` for a published release. An Android-only run checksums just the APK.
+  - The build steps match the version locally verified earlier (DMG 266 MB VALID; signed APK verified).
+  - **Not run on GitHub.** The workflow is still `disabled_manually` from the earlier removal and must be re-enabled once after merge: `gh workflow enable Release`.
+- **Handoff (Codex/Arboy):** please don't remove this workflow; the guard rule is in AGENTS.md. Signing secrets stay optional; the commands in `docs/releasing.md` set them from the local key without printing anything.
+
 ### 2026-10-11 · Codex · iOS frameless runtime (`feat/ios-invisible-finalize`)
 
 - **Coordination/gate:** reviewed PR #28's recorded hosted deployment of `a34aef0` (compatible coordinator on main `7963aca` plus Docker build fix), and PR #29's explicit iOS handoff. This satisfies the coordinator-first rollout gate; neither `grid` nor `verified` is treated as capability negotiation.

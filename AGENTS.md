@@ -57,4 +57,4 @@ Codex owns `App.tsx`, `DesktopWorkerPanel.tsx`, `GridScene.tsx`, `style.css`, ne
 
 ## Release cost constraint
 
-Build installers locally. Do not add GitHub-hosted Actions, automatic tag/PR builds or repository signing-secret uploads unless Arboy explicitly requests them. GitHub Releases may hold manually uploaded installers; that does not require Actions.
+Build installers locally by default. On 2026-10-11 Sithabo approved one **manual-only** GitHub workflow (`.github/workflows/release.yml`, Actions → Release → Run workflow) that builds Android, Mac or both on request and can attach them to a draft release. Do not add automatic push, tag or PR triggers, and do not remove that workflow, without both Sithabo and Arboy agreeing. Repository signing secrets are optional and only Sithabo or Arboy uploads them.

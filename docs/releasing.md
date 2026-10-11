@@ -1,6 +1,6 @@
 # Releasing GiPU locally
 
-Build on your own computer, then upload the installers manually. No GitHub Actions, paid runners or repository signing secrets are needed. iPhone installs through Xcode; see the README.
+Build on your own computer, then upload the installers manually. No GitHub Actions, paid runners or repository signing secrets are needed. iPhone installs through Xcode; see the README. An optional manual GitHub build is described at the end.
 
 ## Mac installer
 
@@ -59,3 +59,31 @@ The repository is private, so downloads are available to people with repository 
 - Release Android builds require an HTTPS grid address. Use a compatible deployed coordinator; building installers does not deploy it.
 
 Actual build and device evidence is recorded in [v1-progress.md](v1-progress.md).
+
+## Optional: build on GitHub (manual only)
+
+`.github/workflows/release.yml` builds the same installers on GitHub runners, but only when someone starts it: **Actions → Release → Run workflow**. It never runs on pushes, tags or pull requests.
+
+- **Version:** stamped into both apps, for example `0.2.0`.
+- **Platforms:** `android` (Linux runner, cheap), `macos` or `both`. In this private repository, macOS minutes cost 10× Linux minutes; a Mac build uses roughly 300 included minutes.
+- **Draft release:** when ticked, the files and `SHA256SUMS.txt` go to a **draft** release `v<version>`, created at the run's commit or added to an existing draft. A published release is never changed. Publishing stays a manual step on the Releases page.
+
+Files are always kept as workflow artifacts on the run. The repository variable `GIPU_DEFAULT_GRID` sets the suggested grid address.
+
+Android signing on GitHub needs the local key from `scripts/android-release-key.sh`, stored as repository secrets. Run this from the repository after creating the key; nothing is printed:
+
+```bash
+base64 -i ~/.gipu-release/gipu-release.jks | gh secret set ANDROID_KEYSTORE_BASE64
+grep '^storePassword=' ~/.gipu-release/keystore.properties | cut -d= -f2- | gh secret set ANDROID_KEYSTORE_PASSWORD
+gh secret set ANDROID_KEY_ALIAS --body gipu
+grep '^keyPassword=' ~/.gipu-release/keystore.properties | cut -d= -f2- | gh secret set ANDROID_KEY_PASSWORD
+```
+
+Without those secrets the run produces a debug-signed `...-debug.apk` for testing and shows a warning. The runner deletes the decoded key after the build.
+
+After this workflow first lands on `main`, enable it once: it was switched off when the earlier automatic version was removed.
+
+```bash
+gh workflow enable Release
+```
+
