@@ -27,7 +27,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C9 | Logo | blocked on Phase 0: Tauri icons | blocked on Phase 0: iOS icon, in-app mark |
 | C10 | Rename to GiPU | todo: docs, Tauri/Android names | in progress: GiPU text implemented; current icon retained pending Phase 0 |
 | C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | todo: shimmer, iOS finalize, Mac/iOS notify |
-| C12 | Replicable README | todo | review iOS/Mac sections |
+| C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
 | C15 | Contribute layout on large screens | — | done: Mac and 320 px browser layout checked |
@@ -35,6 +35,40 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. Status: **todo**.
 
 ## Log
+
+### 2026-10-11 · Codex · README review (PR #21 · `fix/v1-readme-review`)
+
+- Reviewed the Mac/iOS setup against actual scripts and merged #22 controls. Corrected root-relative Mac/Android commands, explicit worker `--join-code` (the worker does not load `.env`), `--connect-paused` for an existing identity, standalone/development cache differences and edit-before-start deployment order.
+- **Coordination:** README is Claude-owned; these narrow review fixes are part of Arboy's explicit request to review/fix/merge the open PRs. No runtime or dependency change.
+- **Verification:** command paths, worker flags and iOS signing/build instructions checked against source; whitespace check passes. The existing PR's fresh-clone build evidence remains in its log; these documentation corrections do not claim a new installation or deployment.
+- **Handoff:** preserve #22 UI terminology and #20 privacy fix when updating this stacked branch. No open question from the Mac/iOS README review.
+
+### 2026-10-11 · Claude · README from a fresh clone (branch `docs/v1-readme`, stacked on the server PR)
+
+- **README.md** is rewritten as numbered paths:
+  1. one computer
+  2. Mac app
+  3. Android
+  4. iPhone
+  5. phones and laptops on a LAN
+  6. hosted grid
+  7. optional planner
+  8. tests
+
+  It adds a prerequisites table, a troubleshooting table and honest prototype limits.
+- **Scripts.**
+  - `scripts/python.sh` (sourced) picks a working Python 3.12 or 3.11, or honors `POCKETGRID_PYTHON`. Before this, `setup.sh` hard-coded `python3.11`, which fails on Macs that have only 3.12 or a pyenv shim.
+  - New `scripts/setup-worker.sh` creates the worker environment and downloads the model in one step.
+- **Verification** from a fresh `git clone`, on this Mac (macOS 26.6.2, Apple silicon):
+  - `setup.sh` passed in 30 s; `setup-worker.sh` passed in 3 min, including the PyTorch install and the Tiny-SD download.
+  - The coordinator served the web app and `/api/health`.
+  - The README worker command connected on MPS.
+  - **First native Android build of this app:** `npm run tauri android build -- --debug --target aarch64 --apk` passed in 1 min 19 s, at the README's APK path. Installed on the `Medium_Phone` emulator, it joined `http://10.0.2.2:8787`, submitted a request, the worker generated it (5.6 s) and finished it, and the app showed the image, "completed", 92 available and an 8-credit receipt.
+  - The README test block passed: 70 coordinator, 33 worker, 42 web, `npm run build`, and Rust 15 passed with 1 ignored.
+  - **Not verified:** the iOS build (this Mac has no iOS simulator platform installed, so `xcodebuild` cannot find a destination), launching the Mac app with `tauri dev`, `build:desktop`, the Docker deploy, and any physical phone.
+- **Seen on Android with the scoped server:** the "Your grid" card showed **0 laptops / 0 connected** while a laptop was sharing, because the current UI counts `state.devices`, which now holds only your own devices. The page still says "Shared with grid members" and shows the green border; the border is expected until the finishers switch.
+- **Handoff (Codex):** switching the device landscape to `state.grid` is needed before the server PR is deployed, or every member will see an empty grid. Please review README sections 2 (Mac) and 4 (iPhone).
+
 
 ### 2026-10-11 · Codex · PR #20 review correction (`fix/v1-server-privacy-review`)
 
@@ -44,7 +78,7 @@ Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. St
 - Image authorization now sweeps expired leases and requires a running or completed assignment. Cancelled/expired finishers lose source access; the owning member and completed producer retain access.
 - Verification: primary coordinator environment `python -m pytest tests --ignore=tests/test_worker.py -q` passed **77**; worker environment `python -m pytest tests/test_worker.py -q` passed **33**. Migration regression preserves the original account, 90 available/10 reserved, the existing job and ledger; linking creates no new grant; a revoked legacy token stays revoked after restart. Cross-account session revocation is denied. Web **42** tests and `npm run build -- --configLoader runner` passed using existing dependencies; the runner avoids writing a Vite config temporary file into the read-only shared dependency directory. `git diff --check` passed. No deployed or physical-device check is claimed.
 - Shared type coordination: root authorized `SessionInfo.last_used_at?: number | null` to represent migrated sessions accurately, without inventing a last-use timestamp.
-- Handoff: root reviewed the fix, integrated current main including #22, and is updating PR #20. Privacy and image-access blockers are resolved by the regression-tested correction. Claude's entries below describe the submitted PR before this correction.
+- Handoff: root reviewed the fix, integrated current main including #22, and is updating PR #20. Privacy and image-access blockers are resolved by the regression-tested correction. PR #20 merged as `ed8cbec`; integrated checks passed 77 coordinator, 33 worker and 50 frontend tests plus frontend build. Claude's entries below describe the submitted PR before this correction.
 
 ### 2026-10-11 · Claude · coordinator V1 (branch `feat/v1-server-identity-privacy`, stacked on the contract PR)
 
