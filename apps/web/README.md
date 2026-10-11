@@ -25,7 +25,13 @@ npm run tauri build
 
 The release `.app` is placed under `src-tauri/target/release/bundle/macos`. This is an unsigned developer prototype, not a notarized distribution. The Mac app uses the same React client and a minimal Rust/Tauri host with the official notification plugin and user-triggered clipboard writing for device pairing. Set the coordinator URL to `http://127.0.0.1:8787` (or your grid host). Server CORS must allow the Tauri origin (`tauri://localhost` on macOS).
 
-Install and launch the Python generation worker separately using its README. Use the advanced setup panel to copy your session pairing token, and pass it as `POCKETGRID_SESSION_TOKEN` when launching the worker. A matching display name is not account linking. After it has downloaded and loaded the model, it appears in the device list; its owner can start/pause it and change CPU thread, image pixel, and session duration limits from this client. The desktop app does not silently download a model or start a process. CPU thread limits do not promise a GPU percentage cap.
+Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect installed worker** under Devices. The app finds its build checkout by default; **Installed worker settings** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
+
+Connect explicitly starts one local Python process, loads the cached model and registers it **paused** under the current account. It never installs packages or downloads models. Once connected, set CPU threads, image size and session duration on **This Mac image worker**, then press **Start sharing**. Connecting consumes model memory even while paused. CPU thread limits are not GPU percentage or RAM quotas.
+
+**Pause** stops accepting work and cancels active inference at a denoising boundary, while keeping the model loaded. **Disconnect worker**, **Leave**, reloading the interface or closing/quitting the app stops the managed process. Disconnect also asks the coordinator to pause the device; if the network is unavailable, its unfinished lease expires. Reconnecting always pauses the device again before it can claim work. A sharing session may continue while the Mac app is in the background, within the chosen limits; the canvas exporter still pauses when hidden.
+
+This is a prepared-checkout prototype, not a bundled worker installer. The app passes the account token through the child's environment, never a command argument or clipboard. It stores a separate private worker identity per coordinator origin and session under app data. Existing command-line workers remain independent and are not stopped by the app. For manual pairing, use **Copy worker pairing token** and `POCKETGRID_SESSION_TOKEN`; a matching display name alone is not account linking.
 
 ## Behavior and security
 
@@ -42,7 +48,10 @@ Install and launch the Python generation worker separately using its README. Use
 ```sh
 npm run build
 cargo check --manifest-path src-tauri/Cargo.toml
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
+
+From the repository root, `node --experimental-strip-types --test apps/web/tests/desktopWorker.test.mjs` checks native-command ordering across disconnects and account changes. `workers/python/.venv/bin/python -m pytest tests/test_worker.py -q` checks paused registration and owner/server identity validation. Native process tests use an isolated fixture rather than image inference; one ignored test is that subprocess fixture.
 
 ## Verified in this checkout
 
