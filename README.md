@@ -79,7 +79,7 @@ POCKETGRID_AGENT_MODE=manual
 # AWS_PROFILE=your-profile
 ```
 
-Selecting the agent in the UI without a configured provider returns an explicit error and reserves nothing. Bedrock is only the planner; image inference still runs on contributors. Local Strands/Ollama was exercised during verification; Bedrock needs valid account credentials and model access. The Akamai container and HTTPS deployment are prepared, but a live Akamai host has not been claimed. DevRev is optional and is not wired into this first compute prototype.
+Selecting the agent in the UI without a configured provider returns an explicit error and reserves nothing. Bedrock is only the planner; image inference still runs on contributors. Local Strands/Ollama was exercised during verification; Bedrock needs valid account credentials and model access. The Akamai HTTPS coordinator has completed a real laptop-worker job in manual mode; hosted Strands planning and physical-phone finalization remain to be verified. See [hosted verification](docs/verification.md#hosted-real-worker-check). DevRev is optional and is not wired into this first compute prototype.
 
 The Akamai workshop provider is implemented using Strands' OpenAI-compatible adapter and the documented `hackathon-chat` alias. Its HTTP/tool flow has adapter tests, and live chat authentication plus a real Strands job submission were subsequently verified during the October 10 demo. See [workshop setup](deploy/workshop.md). The team model key is separate from access to deploy a VM.
 

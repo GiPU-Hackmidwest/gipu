@@ -1,6 +1,6 @@
 # Prototype verification — October 10, 2026
 
-These are observed checks on the development Mac. Multiple worker processes below are **logical devices on one physical host**. A three-laptop/three-phone network test has not been performed.
+Earlier checks ran on the development Mac; the hosted check below uses the Akamai coordinator and one real contributing Mac. Multiple worker processes in the recovery tests are **logical devices on one physical host**. A three-laptop/three-phone network test has not been performed.
 
 | Check | Observed result |
 |---|---|
@@ -31,9 +31,23 @@ The portable recovery script was also run on a fresh, isolated coordinator. It k
 
 [Container evidence](evidence/container.json) records the isolated deployment smoke test. `tests/container_smoke.py` starts a container and a local model worker, checks the full receipt and non-root/model-free server runtime, then stops both. Docker became available after starting the installed desktop app; the earlier daemon limitation was resolved. This local container check is not an Akamai-hosted test.
 
+## Hosted real-worker check
+
+On October 10, 2026, a real Python worker on the M4 Pro development Mac completed a job through the public HTTPS coordinator on the team Linode (deployed commit `3544d5f`). The client/worker checkout was `b85d322`. The server was healthy in **manual** planner mode, redirected HTTP to HTTPS, and its non-root runtime (UID 10001) had no PyTorch installed.
+
+[Recorded evidence](evidence/hosted-worker.json) covers job `04a40ff1023447819c3584ff328b482b`:
+
+- Cached Tiny-SD loaded on the Mac CPU with model downloads disabled. Registration was paused before explicit test activation; limits were two CPU threads, 256×256 pixels and five minutes.
+- A 256×256, twelve-step request completed generation and Pillow export on that Mac in one attempt each. Accepted generation time was 3.297 seconds; export was 0.344 seconds. Submission through observed completion took 5.775 seconds with the model already loaded.
+- Both PNGs were fetched through the authenticated hosted API. The export matched the expected border and preserved every interior pixel. The returned image was visually inspected; Tiny-SD's visual/prompt fidelity remains modest.
+- Receipt: ten reserved, seven contributor credits, one service fee, two refunded. The test account owned the worker, so its balance ended at 99 (100 - 10 + 7 + 2), with zero reserved and seven earned.
+- The test device was paused with no active task, then its worker process stopped. Existing devices and deployment configuration were not changed.
+
+This is one real contributing Mac, not a physical-phone handoff or multi-laptop failover. These single-run timings exclude model startup and do not establish throughput, p95 latency, GPU performance or energy savings. Hosted Strands and the latest merged code were not exercised on this older manual-mode deployment.
+
 ## Remaining external checks
 
-- **Akamai:** the coordinator runs on the team Linode behind Caddy with a Let's Encrypt certificate for its provider hostname (commit 3544d5f, October 10, 2026). Health, web UI, HTTP→HTTPS redirect, closed port 8787, a manual job with **simulated** generation/finalizer workers (receipt 10 = 7 + 1 fee + 2 refund) and persistence of the job, images, session and certificate across `compose down`/`up` were verified. A real laptop worker, physical phone finalization and the Strands planner on the server remain unverified; the server runs in manual planner mode until its provider key is configured.
+- **Akamai:** the coordinator runs on the team Linode behind Caddy with a Let's Encrypt certificate for its provider hostname (commit 3544d5f, October 10, 2026). Health, web UI, HTTP→HTTPS redirect, closed port 8787, a manual job with **simulated** generation/finalizer workers (receipt 10 = 7 + 1 fee + 2 refund) and persistence of the job, images, session and certificate across `compose down`/`up` were verified. The real laptop-worker check above subsequently passed. Physical phone finalization, deployment of the latest merged code and the Strands planner on the server remain unverified; the observed server runs in manual planner mode.
 - **Bedrock:** integration is implemented; the existing default AWS credential check returned `InvalidClientTokenId`. Live AWS model invocation remains unverified. The SDK was tested with a real local model instead.
 - **Physical devices:** install on signed iPhones and other laptops, measure Wi-Fi transfer costs, test sleep/background/thermal behavior, and repeat failover. The iOS Simulator UI and notification permission/banner checks passed through ordinary Xcode Run; these do not measure physical-phone power or network behavior.
 - **Payments:** a transactionally tested sandbox ledger is implemented; no cash collection, payouts, or Flex API integration.
