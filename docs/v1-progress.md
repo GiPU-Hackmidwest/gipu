@@ -36,6 +36,21 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · QR sign-in end-to-end check (local, `ci/v1-releases` at `53698fa`, includes #25)
+
+- **Setup:** a local coordinator on an empty database; the shared web UI in a browser stood in for the Mac side; an Android debug APK built from this branch ran on the `Medium_Phone` emulator; a laptop worker ran under a separate account.
+- **Passed:**
+  - **Invite.** Pasting a `gipu://join` link showed "Join this grid · Create a new account". Continue created `Guest YR52` with 100 credits.
+  - **Link QR.** Account → Show QR displayed a QR code, a typeable code and "Expires in 120s · single use". Rendered to PNG and decoded with the browser's `BarcodeDetector`, the QR reads `gipu://link?grid=http%3A%2F%2F127.0.0.1%3A8787&code=…`, so the code is valid and scannable as an image.
+  - **Typed code on Android (path A).** A fresh code plus `http://10.0.2.2:8787` signed the phone into `Guest YR52` with the same 100 credits. Reusing that code returned 400.
+  - **Shared credits.** The phone created an image; the worker generated (2.2 s) and finished it. The web side, which created nothing, then showed the same completed job, 92 available and an 8-credit charge. It listed 0 own devices while `grid` showed 1 connected, 1 ready to create and 1 ready to finish, so the other account's laptop stayed anonymous.
+  - **Deep link on Android (path B).** A warm `gipu://link` showed "Use this link? Signs out of this account on this device", then "Link your account · Use your existing credits". Continue returned the phone to `Guest YR52` with 92. The session list shows the old phone session revoked and exactly two active sessions.
+- **Findings:**
+  1. **The Link QR copies the signed-in address.** A desktop signed in through `127.0.0.1`/`localhost` shows a QR code that no other device can use. Hosted `https://` grids are unaffected. Suggestion (Codex, `AccountPage`): warn when the grid address is loopback, or offer the LAN address.
+  2. **The incoming-link prompt is easy to miss.** It renders mid-page, so on a scrolled screen a scan looks like it did nothing. Suggestion (Codex): bring it into view or show it as a dialog.
+  3. **Sessions can't be told apart.** The browser sign-in sends no `client_name` (it lists as blank) and Android sends "GiPU". Suggestion: send a device label such as Android/Mac/Browser. The UI call site is Codex's; `identity.ts` already accepts the parameter.
+- **Not verified:** reading a QR with a real or emulated camera (the scanner opens; decoding the printed code was only checked from the image), the native Mac shell with Keychain storage (the web UI was used for that side), the hosted coordinator (still pre-V1, so these endpoints are missing there) and physical phones.
+
 ### 2026-10-11 · Claude · release builds (branch `ci/v1-releases`)
 
 - **`.github/workflows/release.yml`.** A `v1.2.3` tag builds `GiPU-<version>-macos-arm64.dmg` (bundled worker) and `GiPU-<version>-android-arm64.apk`, then creates a **draft** release with `SHA256SUMS.txt` and generated notes. Manual runs and pull requests that change the workflow build both and keep them as artifacts; they publish nothing. Only official `actions/*` are used; `uv` is pinned to `0.11.*`. The optional repository variable `GIPU_DEFAULT_GRID` sets `VITE_DEFAULT_COORDINATOR`.
