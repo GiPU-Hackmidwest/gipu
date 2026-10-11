@@ -1,19 +1,62 @@
 import SwiftUI
 
 private enum GridStyle {
-    static let orange = Color(red: 1, green: 0.412, blue: 0.043)
+    static let orange = Color(red: 1, green: 0.353, blue: 0.035)
     static let actionInk = Color(red: 0.153, green: 0.078, blue: 0.020)
-    static let background = Color(uiColor: .systemGroupedBackground)
-    static let panel = Color(uiColor: .secondarySystemGroupedBackground)
+    static let background = adaptive(0xF4F6F8, dark: 0x1C1E21)
+    static let panel = adaptive(0xF5F6F8, dark: 0x282C31)
+    static let inset = adaptive(0xE5E7EB, dark: 0x171A1E)
+    static let ink = adaptive(0x1C1E21, dark: 0xF1F3F5)
+    static let muted = adaptive(0x606770, dark: 0xABB3BD)
+    static let highlight = adaptive(0xFFFFFF, dark: 0x454B54)
+    static let shade = adaptive(0xB6BDC8, dark: 0x080A0D)
+
+    private static func adaptive(_ light: UInt32, dark: UInt32) -> Color {
+        Color(uiColor: UIColor { traits in
+            let hex = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((hex >> 16) & 255) / 255,
+                           green: CGFloat((hex >> 8) & 255) / 255,
+                           blue: CGFloat(hex & 255) / 255, alpha: 1)
+        })
+    }
+}
+
+/// Opaque, softly lit material shared by panels, platforms, and recessed wells.
+private struct ClaySurface<S: InsettableShape>: View {
+    @Environment(\.colorSchemeContrast) private var contrast
+    let shape: S
+    var recessed = false
+    var color = GridStyle.panel
+    var compact = false
+
+    var body: some View {
+        shape.fill(color
+            .shadow(.inner(color: (recessed ? GridStyle.shade : GridStyle.highlight).opacity(recessed ? 0.55 : 0.9),
+                           radius: recessed ? 5 : 2, x: recessed ? 3 : -1, y: recessed ? 3 : -1))
+            .shadow(.inner(color: (recessed ? GridStyle.highlight : GridStyle.shade).opacity(recessed ? 0.75 : 0.12),
+                           radius: recessed ? 4 : 3, x: recessed ? -3 : 1, y: recessed ? -3 : 2)))
+            .shadow(color: recessed ? .clear : GridStyle.highlight.opacity(0.8), radius: compact ? 5 : 12, x: compact ? -2 : -6, y: compact ? -2 : -6)
+            .shadow(color: recessed ? .clear : GridStyle.shade.opacity(0.4), radius: compact ? 6 : 14, x: compact ? 3 : 7, y: compact ? 3 : 8)
+            .overlay(shape.strokeBorder(contrast == .increased ? GridStyle.ink.opacity(0.45) : .clear, lineWidth: 1))
+    }
 }
 
 private struct GridPrimaryButton: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     func makeBody(configuration: Configuration) -> some View {
         configuration.label.font(.headline).foregroundStyle(GridStyle.actionInk)
             .frame(maxWidth: .infinity, minHeight: 48)
             .padding(.horizontal, 16).padding(.vertical, 5)
-            .background(GridStyle.orange.opacity(configuration.isPressed ? 0.75 : 1), in: Capsule())
+            .background {
+                ClaySurface(shape: Capsule(), recessed: configuration.isPressed,
+                            color: GridStyle.orange, compact: true)
+                    .overlay(Capsule().fill(.black.opacity(configuration.isPressed ? 0.08 : 0)))
+            }
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.985 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
+            .overlay(Capsule().strokeBorder(contrast == .increased ? GridStyle.actionInk.opacity(0.7) : .clear, lineWidth: 1))
             .opacity(isEnabled ? 1 : 0.45)
     }
 }
@@ -21,7 +64,7 @@ private struct GridPrimaryButton: ButtonStyle {
 private struct GridPanel: ViewModifier {
     func body(content: Content) -> some View {
         content.padding(24).frame(maxWidth: .infinity, alignment: .leading)
-            .background(GridStyle.panel, in: RoundedRectangle(cornerRadius: 34, style: .continuous))
+            .background { ClaySurface(shape: RoundedRectangle(cornerRadius: 34, style: .continuous)) }
     }
 }
 
@@ -37,14 +80,13 @@ private struct DeviceTile: View {
         VStack(spacing: 14) {
             Image(systemName: symbol)
                 .font(.system(size: 48, weight: .light))
-                .foregroundStyle(.primary)
+                .foregroundStyle(GridStyle.ink)
                 .frame(maxWidth: .infinity).frame(height: 116)
-                .background(GridStyle.panel, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
-                .shadow(color: .black.opacity(0.045), radius: 14, x: 0, y: 8)
+                .background { ClaySurface(shape: RoundedRectangle(cornerRadius: 32, style: .continuous)) }
                 .accessibilityHidden(true)
             VStack(spacing: 4) {
                 Text(name).font(.subheadline.weight(.medium))
-                Text(status).font(.caption).foregroundStyle(.secondary)
+                Text(status).font(.caption).foregroundStyle(GridStyle.muted)
             }
         }.accessibilityElement(children: .ignore)
             .accessibilityLabel("\(symbol == "laptopcomputer" ? "Laptop" : "Finishing device"), \(status)")
@@ -60,12 +102,13 @@ private struct HandoffDevice: View {
             Image(systemName: symbol)
                 .font(.system(size: symbol == "laptopcomputer" ? 62 : 54, weight: .ultraLight))
                 .frame(width: 104, height: 104)
-                .background(GridStyle.panel, in: Circle())
-                .shadow(color: .black.opacity(0.06), radius: 14, x: 0, y: 9)
+                .background { ClaySurface(shape: Circle(), recessed: true, color: GridStyle.inset).padding(5) }
+                .background { ClaySurface(shape: Circle()) }
             HStack(spacing: 5) {
                 Text(name).fontWeight(.medium)
-                Text(status).foregroundStyle(.secondary)
-            }.font(.caption)
+                Text(status).foregroundStyle(GridStyle.muted)
+            }.font(.caption).padding(.horizontal, 10).padding(.vertical, 7)
+                .background { ClaySurface(shape: Capsule(), compact: true) }
         }.accessibilityElement(children: .ignore)
             .accessibilityLabel("\(name), \(status)")
     }
@@ -80,7 +123,7 @@ private struct DeviceHandoff: View {
             if typeSize.isAccessibilitySize {
                 VStack(spacing: 20) {
                     DeviceTile(symbol: "laptopcomputer", name: "Create", status: availability("image_generate"))
-                    Image(systemName: "arrow.down").foregroundStyle(.secondary).accessibilityHidden(true)
+                    Image(systemName: "arrow.down").foregroundStyle(GridStyle.muted).accessibilityHidden(true)
                     DeviceTile(symbol: "iphone", name: "Finish", status: availability("image_finalize"))
                 }
             } else {
@@ -92,7 +135,7 @@ private struct DeviceHandoff: View {
                             path.addCurve(to: CGPoint(x: width * 0.72, y: 188),
                                           control1: CGPoint(x: width * 1.05, y: 70),
                                           control2: CGPoint(x: width * 0.04, y: 196))
-                        }.stroke(.primary.opacity(0.25), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        }.stroke(GridStyle.muted.opacity(0.6), style: StrokeStyle(lineWidth: 2, lineCap: .round))
                             .accessibilityHidden(true)
                         HandoffDevice(symbol: "laptopcomputer", name: "Laptop", status: availability("image_generate"))
                             .position(x: width * 0.28, y: 86)
@@ -100,7 +143,7 @@ private struct DeviceHandoff: View {
                             .position(x: width * 0.73, y: 196)
                     }
                 }.frame(height: 272)
-                    .background(.primary.opacity(0.025), in: RoundedRectangle(cornerRadius: 38, style: .continuous))
+                    .background { ClaySurface(shape: RoundedRectangle(cornerRadius: 38, style: .continuous), recessed: true, color: GridStyle.background) }
             }
         }.padding(.vertical, 8)
     }
@@ -132,7 +175,8 @@ struct ContentView: View {
                 }
             } else { JoinView() }
         }
-        .tint(Color.primary)
+        .foregroundStyle(GridStyle.ink)
+        .tint(GridStyle.ink)
         .alert("PocketGrid", isPresented: Binding(get: { grid.error != nil }, set: { if !$0 { grid.error = nil } })) {
             Button("OK") { grid.error = nil }
         } message: { Text(grid.error ?? "") }
@@ -160,7 +204,7 @@ private struct JoinView: View {
                         Button { Task { await grid.join() } } label: {
                             HStack { Text("Join grid"); if grid.busy { ProgressView() } }
                         }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.name.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Text("Sharing starts only when you choose.").font(.caption).foregroundStyle(.secondary)
+                        Text("Sharing starts only when you choose.").font(.caption).foregroundStyle(GridStyle.muted)
                     }.gridPanel()
                     DisclosureGroup("About this grid") {
                         Text("Grid members can see prompts and images. Use public demo material. Credits have no cash value.").font(.footnote).padding(.top, 8)
@@ -186,7 +230,7 @@ private struct BalanceView: View {
     private func metric(_ label: String, _ value: Int) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(grid.snapshot == nil ? "—" : "\(value)").font(.title.monospacedDigit().weight(.medium))
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(label).font(.caption).foregroundStyle(GridStyle.muted)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -206,9 +250,9 @@ private struct CreateView: View {
                         TextField("What do you imagine?", text: $prompt, axis: .vertical)
                             .font(.title3).lineLimit(3...6).accessibilityLabel("Image prompt")
                         HStack {
-                            Text("\(count * 7 + 1) credits estimated").font(.caption).foregroundStyle(.secondary)
+                            Text("\(count * 7 + 1) credits estimated").font(.caption).foregroundStyle(GridStyle.muted)
                             Spacer()
-                            Text("\(grid.snapshot?.balance ?? 0) available").font(.caption).foregroundStyle(.secondary)
+                            Text("\(grid.snapshot?.balance ?? 0) available").font(.caption).foregroundStyle(GridStyle.muted)
                         }
                         DisclosureGroup("Options") {
                             VStack(spacing: 18) {
@@ -216,15 +260,15 @@ private struct CreateView: View {
                                     .onChange(of: count) { _, value in budget = max(budget, value * 7 + 1) }
                                 Stepper("Budget: \(budget)", value: $budget, in: (count * 7 + 1)...100)
                                 Toggle("Smart device selection", isOn: $useAgent).disabled(grid.snapshot?.agent.available != true)
-                                Text(grid.snapshot?.agent.available == true ? "A planner chooses suitable devices." : "Smart selection is unavailable. Devices can still accept requests.").font(.caption).foregroundStyle(.secondary)
+                                Text(grid.snapshot?.agent.available == true ? "A planner chooses suitable devices." : "Smart selection is unavailable. Devices can still accept requests.").font(.caption).foregroundStyle(GridStyle.muted)
                             }.padding(.top, 18)
                         }.font(.subheadline)
                         Button { Task { await grid.submit(prompt: prompt, count: count, budget: budget, useAgent: useAgent) } } label: {
                             HStack { Text(grid.submitting ? "Creating…" : "Create image"); if grid.submitting { ProgressView() } }
                         }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.submitting || grid.snapshot == nil || budget > (grid.snapshot?.balance ?? 0) || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
-                        Text("Reserves \(budget) credits. Unused credits return.").font(.caption).foregroundStyle(.secondary)
+                        Text("Reserves \(budget) credits. Unused credits return.").font(.caption).foregroundStyle(GridStyle.muted)
                     }.gridPanel()
-                    if let notice = grid.notice { Text(notice).font(.footnote).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading) }
+                    if let notice = grid.notice { Text(notice).font(.footnote).foregroundStyle(GridStyle.muted).frame(maxWidth: .infinity, alignment: .leading) }
                     ForEach(grid.ownJobs) { job in JobCard(job: job) }
                 }.padding(24).frame(maxWidth: 580).frame(maxWidth: .infinity)
             }.background(GridStyle.background).navigationTitle("Create").navigationBarTitleDisplayMode(.inline)
@@ -239,7 +283,7 @@ private struct JobCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             Text(job.prompt).font(.headline)
-            Text(job.statusLabel).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+            Text(job.statusLabel).font(.caption.weight(.medium)).foregroundStyle(GridStyle.muted)
             JobProgressView(job: job)
             ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant) }
             if !job.tasks.isEmpty {
@@ -247,7 +291,7 @@ private struct JobCard: View {
                     ForEach(job.tasks) { task in
                         VStack(alignment: .leading, spacing: 4) {
                             Text("\(task.kind == "image_generate" ? "Create" : "Finish") · image \(task.variant + 1)")
-                            Text("\(task.device_id.flatMap { id in grid.snapshot?.devices.first { $0.id == id }?.name } ?? "Awaiting device") · \(task.status)").font(.caption).foregroundStyle(.secondary)
+                            Text("\(task.device_id.flatMap { id in grid.snapshot?.devices.first { $0.id == id }?.name } ?? "Awaiting device") · \(task.status)").font(.caption).foregroundStyle(GridStyle.muted)
                         }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
                     }
                 }.font(.subheadline)
@@ -260,10 +304,10 @@ private struct JobCard: View {
                         LabeledContent("Service", value: "\(receipt.platform_fee)")
                         LabeledContent("Charged", value: "\(receipt.total_charged)").fontWeight(.medium)
                         LabeledContent("Returned", value: "\(receipt.refund)")
-                        Text("Sandbox credits · no cash value").font(.caption).foregroundStyle(.secondary)
+                        Text("Sandbox credits · no cash value").font(.caption).foregroundStyle(GridStyle.muted)
                     }.padding(.top, 12)
                 }.font(.subheadline)
-            } else { Text("\(job.reservedCredits) credits reserved").font(.caption).foregroundStyle(.secondary) }
+            } else { Text("\(job.reservedCredits) credits reserved").font(.caption).foregroundStyle(GridStyle.muted) }
             if job.isActive {
                 Button("Cancel request", role: .destructive) { Task { await grid.cancel(job) } }.frame(minHeight: 44)
             }
@@ -278,7 +322,7 @@ private struct JobProgressView: View {
         VStack(alignment: .leading, spacing: 12) {
             if job.isPlanning { ProgressView(job.planningTitle) }
             else {
-                if let summary = job.terminalSummary { Text(summary).font(.subheadline).foregroundStyle(.secondary) }
+                if let summary = job.terminalSummary { Text(summary).font(.subheadline).foregroundStyle(GridStyle.muted) }
                 if !job.tasks.isEmpty && job.isActive {
                     let generated = job.completedCount("image_generate")
                     let finished = job.completedCount("image_finalize")
@@ -293,7 +337,7 @@ private struct JobProgressView: View {
             if !grid.sharing && job.canStartFinishing(on: grid.ownDevice, limits: grid.limits) {
                 Button("Help finish on this phone") { Task { await grid.start() } }
                     .buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.contributionTransition)
-                Text("Share for \(grid.limits.session_minutes) minutes. Keep the app open. Pause in Contribute.").font(.caption).foregroundStyle(.secondary)
+                Text("Share for \(grid.limits.session_minutes) minutes. Keep the app open. Pause in Contribute.").font(.caption).foregroundStyle(GridStyle.muted)
             }
         }
     }
@@ -301,7 +345,7 @@ private struct JobProgressView: View {
         let state = job.stageState(kind, devices: grid.snapshot?.devices ?? [], serverTime: grid.snapshot?.server_time)
         return VStack(alignment: .leading, spacing: 3) {
             Text("\(title) · \(completed)/\(job.imageCount)").font(.subheadline.weight(.medium))
-            Text(stageMessage(state, kind: kind)).font(.caption).foregroundStyle(.secondary)
+            Text(stageMessage(state, kind: kind)).font(.caption).foregroundStyle(GridStyle.muted)
         }.accessibilityElement(children: .combine)
     }
     private func stageMessage(_ state: JobStageState, kind: String) -> String {
@@ -337,7 +381,7 @@ private struct ProtectedImage: View {
                 }.buttonStyle(.bordered).controlSize(.large)
             } else if failed { Label("Image unavailable", systemImage: "photo.badge.exclamationmark") }
             else { ProgressView() }
-            Text("Image \(variant + 1) · \(stageLabel)").font(.caption).foregroundStyle(.secondary)
+            Text("Image \(variant + 1) · \(stageLabel)").font(.caption).foregroundStyle(GridStyle.muted)
         }.task(id: path) {
             do { image = UIImage(data: try await grid.image(path)); failed = image == nil }
             catch { failed = true }
@@ -354,10 +398,14 @@ private struct SessionDial: View {
             let duration = Double(max(1, grid.ownDevice?.limits.session_minutes ?? grid.limits.session_minutes) * 60)
             ZStack {
                 Circle().stroke(GridStyle.panel, lineWidth: 28)
-                    .shadow(color: .black.opacity(0.04), radius: 12, x: 0, y: 8)
+                    .shadow(color: GridStyle.highlight.opacity(0.9), radius: 8, x: -5, y: -5)
+                    .shadow(color: GridStyle.shade.opacity(0.5), radius: 10, x: 5, y: 7)
+                ClaySurface(shape: Circle(), recessed: true, color: GridStyle.inset).padding(22)
                 if grid.sharing, grid.ownDevice?.session_expires_at != nil {
                     Circle().trim(from: 0, to: min(1, remaining / duration))
-                        .stroke(GridStyle.orange, style: StrokeStyle(lineWidth: 28, lineCap: .round)).rotationEffect(.degrees(-90))
+                        .stroke(GridStyle.orange, style: StrokeStyle(lineWidth: 28, lineCap: .round))
+                        .shadow(color: GridStyle.orange.opacity(0.2), radius: 4, x: 2, y: 3)
+                        .rotationEffect(.degrees(-90))
                 }
                 VStack(spacing: 14) {
                     Image(systemName: grid.sharing ? "iphone.radiowaves.left.and.right" : "iphone")
@@ -365,7 +413,7 @@ private struct SessionDial: View {
                     Text(grid.sharing ? (grid.ownDevice?.session_expires_at == nil ? "Sharing" : timer(remaining)) : "Paused")
                         .font(.largeTitle.weight(.light).monospacedDigit()).minimumScaleFactor(0.6).lineLimit(1)
                     if grid.sharing, grid.ownDevice?.session_expires_at != nil {
-                        Text("remaining").font(.caption).foregroundStyle(.secondary)
+                        Text("remaining").font(.caption).foregroundStyle(GridStyle.muted)
                     }
                 }.padding(30)
             }.aspectRatio(1, contentMode: .fit).frame(maxWidth: 250).padding(18)
@@ -385,27 +433,27 @@ private struct ContributeView: View {
                 VStack(spacing: 24) {
                     VStack(spacing: 8) {
                         Text(grid.ownDevice?.name ?? "This phone").font(.title3.weight(.medium))
-                        Text(grid.sharing ? "Sharing while open" : "Connected · sharing paused").font(.caption).foregroundStyle(.secondary)
+                        Text(grid.sharing ? "Sharing while open" : "Connected · sharing paused").font(.caption).foregroundStyle(GridStyle.muted)
                     }.padding(.top, 12)
                     SessionDial()
                     VStack(alignment: .leading, spacing: 20) {
                         HStack {
                             Label("\(grid.ownDevice?.earned ?? 0) earned", systemImage: "circle.grid.2x2")
                             Spacer()
-                            Text("\(grid.limits.session_minutes) min").foregroundStyle(.secondary)
+                            Text("\(grid.limits.session_minutes) min").foregroundStyle(GridStyle.muted)
                         }.font(.subheadline)
                         if let task = grid.active {
                             Text("Finishing image \(task.variant + 1)").font(.subheadline)
                             ProgressView(value: grid.progress).tint(GridStyle.orange)
                         } else if grid.sharing {
-                            Text("Ready to help").font(.subheadline).foregroundStyle(.secondary)
+                            Text("Ready to help").font(.subheadline).foregroundStyle(GridStyle.muted)
                         }
                         if grid.sharing {
                             Button { Task { await grid.pause() } } label: { Label("Pause sharing", systemImage: "pause.fill") }.buttonStyle(GridPrimaryButton())
                         } else {
                             Button { Task { await grid.start() } } label: { Label(grid.contributionTransition ? "Connecting…" : "Start sharing", systemImage: "play.fill") }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.contributionTransition)
                         }
-                        Text("Leaving the app pauses sharing.").font(.caption).foregroundStyle(.secondary)
+                        Text("Leaving the app pauses sharing.").font(.caption).foregroundStyle(GridStyle.muted)
                         DisclosureGroup("Limits") {
                             VStack(spacing: 18) {
                                 Picker("Maximum image", selection: $grid.limits.max_pixels) {
@@ -414,7 +462,7 @@ private struct ContributeView: View {
                                     Text("512 × 512").tag(262144)
                                 }
                                 Stepper("Session: \(grid.limits.session_minutes) min", value: $grid.limits.session_minutes, in: 5...120, step: 5)
-                                Text(grid.sharing ? "Pause to change limits." : "One image at a time. Limits control image size and time, not memory or GPU usage.").font(.caption).foregroundStyle(.secondary)
+                                Text(grid.sharing ? "Pause to change limits." : "One image at a time. Limits control image size and time, not memory or GPU usage.").font(.caption).foregroundStyle(GridStyle.muted)
                             }.padding(.top, 14).disabled(grid.sharing || grid.contributionTransition)
                         }.font(.subheadline)
                     }.gridPanel()
@@ -440,7 +488,7 @@ private struct ActivityView: View {
                     Button { Task { await grid.enableNotifications() } } label: { LabeledContent("Notifications", value: grid.notificationStatus) }
                     DisclosureGroup("Grid details") {
                         Text(URL(string: grid.server)?.host ?? grid.server).font(.caption)
-                        Text("Alerts arrive while the app receives updates.").font(.caption).foregroundStyle(.secondary)
+                        Text("Alerts arrive while the app receives updates.").font(.caption).foregroundStyle(GridStyle.muted)
                     }
                 }
                 Section("Devices") {
@@ -449,17 +497,17 @@ private struct ActivityView: View {
                             Image(systemName: device.capabilities?.contains("image_generate") == true ? "laptopcomputer" : "iphone").frame(width: 32).accessibilityHidden(true)
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(device.name)
-                                Text(sharingStatus(device)).font(.caption).foregroundStyle(.secondary)
+                                Text(sharingStatus(device)).font(.caption).foregroundStyle(GridStyle.muted)
                             }
                         }.padding(.vertical, 6)
                     }
                 }
                 Section("Activity") {
-                    if grid.snapshot?.events.isEmpty == true { Text("Nothing yet").foregroundStyle(.secondary) }
+                    if grid.snapshot?.events.isEmpty == true { Text("Nothing yet").foregroundStyle(GridStyle.muted) }
                     ForEach(grid.snapshot?.events ?? []) { event in
                         VStack(alignment: .leading, spacing: 4) {
                             Text(event.message)
-                            Text(Date(timeIntervalSince1970: event.created_at), style: .time).font(.caption).foregroundStyle(.secondary)
+                            Text(Date(timeIntervalSince1970: event.created_at), style: .time).font(.caption).foregroundStyle(GridStyle.muted)
                         }
                     }
                 }

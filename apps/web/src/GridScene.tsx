@@ -10,7 +10,7 @@ export function GridScene({ state, onOpen }: { state: Snapshot | null; onOpen: (
   return <aside className="grid-scene" aria-label="Live grid devices">
     <div className="scene-top"><span>Your grid</span><button className="round-control" onClick={onOpen} aria-label="View grid devices"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 18 18 6M6 6h12v12" /></svg></button></div>
     <div className="device-landscape">
-      <svg className="grid-path" viewBox="0 0 400 330" aria-hidden="true"><path d="M108 88C330 88 45 238 293 238" /></svg>
+      <svg className="grid-path" viewBox="0 0 400 330" aria-hidden="true"><path d="M108 88C330 88 45 238 293 238" /><circle className="route-waypoint" cx="108" cy="88" r="5" /><circle className="route-waypoint" cx="293" cy="238" r="5" /></svg>
       <div className="hardware laptop"><div className="laptop-screen"><span className="screen-grid">{Array.from({ length: 9 }, (_, i) => <i key={i} />)}</span></div><div className="laptop-base" /></div>
       <div className="device-count laptop-count"><strong>{state ? count(laptops) : '—'}</strong><span>{count(laptops) === 1 ? 'laptop' : 'laptops'}</span></div>
       <div className="hardware phone"><div className="phone-screen"><span /></div></div>

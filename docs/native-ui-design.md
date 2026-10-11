@@ -10,6 +10,12 @@ The supplied three-screen parking reference uses soft gray surfaces, large restr
 
 Use the system sans-serif stack on Mac/web and native SwiftUI fonts on iOS. Use direct destination titles rather than promotional slogan headers. Numeric credits align clearly, and supporting labels stay secondary. Avoid filling the screen with uniform dashboard cards: use scale, open space, the live device landscape and a focused control surface to establish hierarchy. Preserve readable contrast instead of copying the reference's faint gray text or white labels on orange. Native iOS tabs, forms, disclosure groups and share controls keep the app familiar. Do not recreate a phone frame or parking imagery inside the product.
 
+## Clay material refinement
+
+The refinement gives the existing spatial layout a consistent opaque clay material. One upper-left light source produces paired shadows: a soft highlight above/left and a soft shade below/right. Three elevations make function legible: **raised** panels and device platforms, **floating** controls and status pills, and **recessed** input wells, the device landscape and timer track. Pressed controls move visually into the recessed treatment. Large continuous corners and restrained orange preserve the reference's sculptural quality.
+
+This uses shadow softness, not backdrop blur, glass effects or particles. It adds no explanatory copy: short labels, visible state and the same primary actions remain. Web increased-contrast mode replaces shadow dependence with stronger borders; iOS adds explicit outlines. Reduced-motion settings remove the optional press animation. These implementations still need a complete accessibility review in context.
+
 ## Three journeys
 
 Joining comes first: grid address, name and join code → **Join grid**. Show the connected grid identity afterward. Sharing remains off.
@@ -30,28 +36,35 @@ Use **Connect**, **Start sharing**, **Pause**, **Disconnect**, **Create**, **Sav
 
 ## Shared tokens and contrast
 
-| Token | Light web | Dark web |
-| --- | --- | --- |
-| Canvas | `#e9eae8` | `#191c19` |
-| Surface | `#f7f8f6` | `#252925` |
-| Main text | `#20231f` | `#f1f3ee` |
-| Secondary text | `#60655e` | `#b4bcb0` |
-| Primary action | `#ff690b` | `#ff690b` |
-| Action text | `#271405` | `#271405` |
+Light colors align across web and iOS. Each platform has a distinct adaptive dark palette:
 
-Calculated sRGB relative-luminance contrast for these opaque pairs:
+| Token | Light web/iOS | Dark web | Dark iOS |
+| --- | --- | --- | --- |
+| Canvas | `#F4F6F8` | `#202328` | `#1C1E21` |
+| Surface | `#F5F6F8` | `#272B31` | `#282C31` |
+| Inset | `#E5E7EB` | `#1B1E23` | `#171A1E` |
+| Main text | `#1C1E21` | `#F1F3F6` | `#F1F3F5` |
+| Secondary text | `#606770` | `#B4BBC6` | `#ABB3BD` |
+| Primary action | `#FF5A09` | `#FF5A09` | `#FF5A09` |
+| Action text | `#271405` | `#271405` | `#271405` |
+
+SwiftUI expresses the orange/action ink as normalized RGB values that round to the listed 8-bit tokens. Calculated sRGB relative-luminance contrast for these opaque token pairs:
 
 | Text / background | Ratio |
 | --- | --- |
-| Action text / orange | 6.12:1 |
-| Light main text / surface | 14.92:1 |
-| Light secondary text / surface | 5.60:1 |
-| Light secondary text / canvas | 4.94:1 |
-| Dark main text / surface | 13.21:1 |
-| Dark secondary text / surface | 7.56:1 |
-| Dark secondary text / canvas | 8.81:1 |
+| Action text / orange | 5.65:1 |
+| Light main text / surface | 15.45:1 |
+| Light secondary text / surface | 5.29:1 |
+| Light secondary text / canvas | 5.28:1 |
+| Light secondary text / inset | 4.62:1 |
+| Dark web main text / surface | 12.80:1 |
+| Dark web secondary text / surface | 7.36:1 |
+| Dark web secondary text / canvas | 8.15:1 |
+| Dark iOS main text / surface | 12.63:1 |
+| Dark iOS secondary text / surface | 6.63:1 |
+| Dark iOS secondary text / canvas | 7.89:1 |
 
-White on orange is only 2.89:1, so action labels use dark ink. These token calculations do not establish a full accessibility audit: opacity, disabled/pressed states, platform materials and actual rendered combinations require inspection. SwiftUI uses adaptive system surfaces/text, with the same orange/action-ink pairing.
+White on orange is 3.13:1, so normal-size action labels use dark ink. These token calculations do not establish a full accessibility audit: opacity, shadows, disabled/pressed states and actual rendered combinations require inspection.
 
 Web controls have at least 44px height, visible keyboard focus, reduced-motion handling and a stronger-border option for increased contrast. iOS uses native controls and Dynamic Type. Status always includes words rather than relying on color. Confirm keyboard order, VoiceOver labels, large text, light/dark modes and narrow layouts during rendered QA.
 
@@ -65,7 +78,18 @@ The Android workstream owns native credentials, notifications, save/share, lifec
 
 ## Verification scope
 
-Verified in this native UI pass:
+### Clay refinement
+
+- Production web and native Mac debug builds passed. iOS simulator and unsigned arm64 device builds passed.
+- The actual native Mac Create screen and iOS simulator Create/Contribute screens were visually inspected with the refined materials. On the simulator, explicit Start produced a live remaining-time countdown and Pause stopped contribution.
+- The web layout at 320px had no horizontal DOM overflow after the compact navigation fix. This is a layout check, not a full accessibility audit.
+- Screen capture worked for these inspections. On reopening, the Mac app showed Disconnected, confirming the earlier Disconnect took effect. The earlier capture interruption is historical, not a current blocker.
+
+The earlier real generation and settlement checks below were not rerun for this material refinement. Their behavior was preserved, but they remain evidence of the preceding implementation. Comprehensive dark-mode and large-text inspection was not completed.
+
+### Earlier native UI baseline
+
+Verified before the clay refinement:
 
 - Production web build and 28 Node regression tests passed; 45 coordinator tests passed. Rust checks passed with 11 tests passed and one ignored subprocess fixture.
 - The native Mac debug `.app` built and rendered. Connecting the prepared managed worker left it paused; explicit Start and Pause controls worked.
@@ -74,6 +98,6 @@ Verified in this native UI pass:
 - Final iOS simulator and unsigned arm64 device builds passed, along with 17 notification ownership checks. The iOS 320-point dial geometry compiled; that check alone is not a narrow-screen visual review.
 - The web layout at 390px had no horizontal DOM overflow. This is a layout check, not comprehensive accessibility verification.
 
-Screen capture stopped responding after the final managed-worker Start/Pause check. The following Disconnect click could not be visually confirmed. The iOS ShareLink compiled, but its system share sheet was not exercised.
+The earlier screen-capture interruption prevented immediate confirmation of Disconnect; later reopening showed Disconnected as noted above. The iOS ShareLink compiled, but its system share sheet was not exercised in either recorded pass.
 
 The finishing device in the local native journey was an iOS simulator. Physical-phone end-to-end behavior, comprehensive dark-mode/Dynamic Type/VoiceOver review, and physical multi-laptop failover were not verified by these checks. Earlier platform README results remain historical evidence. Live device availability must be rechecked before a demo.
