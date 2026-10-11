@@ -24,7 +24,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C6 | Create images / Finish images toggles | todo: verify on Android | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
 | C8 | Device counts, no test devices | review: `grid` counts merged; todo: hosted deploy/cleanup if needed | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
-| C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | review: in-app marks and native iOS AppIcon implemented; host asset build pending |
+| C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
 | C10 | Rename to GiPU | todo: Tauri productName, Android/release names and remaining docs | done: GiPU in-app name and mark; bundle IDs/env names preserved |
 | C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | partial: authoritative verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime remains legacy until deploy |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
@@ -36,12 +36,18 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Codex · completed integration (`docs/v1-integration-results`)
+
+- PRs #18–#25 are merged into main, through `f59d99f`; the local main checkout is synchronized. Personal Xcode signing changes were preserved exactly and remain uncommitted. No open PR remained at the final integration check.
+- Final combined validation: 78 frontend tests, 16 Rust tests (one existing ignored fixture), frontend production build and bundled native Mac build passed. The final iOS catalog also built successfully in host Xcode for iPhone 17 Pro Max simulator at 02:56 local time. No physical-phone test is claimed.
+- **Handoff:** Claude owns hosted coordinator deployment, coordinated runtime finalizer rollout, Tauri release/product-name packaging and final Android device validation. Codex's iOS invisible encoder is staged and pixel-tested; keep its legacy runtime until compatible deployment is confirmed. Arboy/Sitha still need real phone QR decoding and phone finishing checks, followed by release/signing validation. The overall V1 is not marked complete.
+
 ### 2026-10-11 · Codex · brand and Android account integration (`feat/v1-account-ui`)
 
 - PR #23 merged as `80d6a2d` and #24 as `f9a32a7`; integration commit `e5e458d` preserves the account UI and both platform storage implementations. No account-UI PR number is assigned in this entry.
 - **Brand:** `brand/` is the accepted asset source. Tauri/Android icons came from #23; Mac/web and iOS in-app marks plus the native SwiftUI AppIcon catalog are implemented. Bundle identifiers and environment names stay unchanged. The brand dot uses `#FF5A09` as a static mark, while white action labels retain `#C34400`; the logo does not indicate active sharing. Tauri productName, Android/release naming and remaining distribution work stay with Claude.
 - **Android:** shared sign-in now selects the Keystore-backed session adapter only on Android. Camera scans honor AbortSignal on cancellation/teardown/backgrounding. Incoming links require confirmation before account changes; worker cleanup and credential ordering remain intact. The reviewed adapter correction rejects failed durable deletion, removes stale plaintext when secure storage wins, and tears down listeners if the cold-link read fails. Dependencies remain Android-only deep-link 2.6.1 and barcode-scanner 2.5.2, alongside the previously coordinated QR/Keychain dependencies.
-- **Verification:** the pre-Android account baseline passed **66 frontend tests**, including the foreign-earnings privacy regression. The separate #24 review passed **61 frontend tests**, production frontend build and **15 Rust tests / one ignored**. **Combined integration:** 78 frontend tests, 16 Rust tests (one ignored) and the production frontend/native Mac bundled build passed. The iOS terminal asset-catalog build is blocked by simulator-service access; a completed host Xcode asset build is pending (the GUI attempt stayed on a physical-device destination requiring signing). Earlier iOS source builds/harnesses predate the new catalog.
+- **Verification:** the pre-Android account baseline passed **66 frontend tests**, including the foreign-earnings privacy regression. The separate #24 review passed **61 frontend tests**, production frontend build and **15 Rust tests / one ignored**. **Combined integration:** 78 frontend tests, 16 Rust tests (one ignored) and the production frontend/native Mac bundled build passed. The final iOS asset catalog built successfully through Xcode on the iPhone 17 Pro Max simulator destination at 02:56 local time. Terminal builds remain limited by simulator-service sandbox access; the final physical-device build is not claimed. Earlier iOS source builds/harnesses predate the new catalog.
 - **Remaining gates:** final integrated checks, confirmed compatible hosted coordinator deployment, physical QR decoding and phone finishing, and release artifacts/distribution. Finishers remain legacy-compatible until deployment is confirmed. No full V1 sign-off or physical-device proof is implied.
 
 ### 2026-10-11 · Codex · Android adapter review and integration (#24)
