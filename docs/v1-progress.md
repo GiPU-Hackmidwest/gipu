@@ -37,7 +37,7 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
-### 2026-10-11 · Codex · README refresh (`docs/gipu-readme`)
+### 2026-10-11 · Codex · README refresh (PR #44, `docs/gipu-readme`)
 
 - **Coordination:** Arboy explicitly asked Codex to update the README, take structural inspiration from Pitchly, include the actual GiPU wordmark and push. This authorizes the focused README changes normally owned by Claude. Requesting coordination here before editing the root and web/worker guides; no worker, server, protocol or release-workflow behavior will change.
 - **Scope:** product overview and app journey first; existing light/dark wordmark; accurate cloud/local generation, dynamic prices, platform availability and source setup. Preserve runnable platform instructions and distinguish published installers from draft builds.
