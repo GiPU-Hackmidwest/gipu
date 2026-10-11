@@ -24,7 +24,9 @@ fn secure_storage<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .plugin(tauri_plugin_clipboard_manager::init())
+        // Opens Stripe Checkout in the system browser to buy credits.
+        .plugin(tauri_plugin_opener::init());
 
     // QR sign-in: gipu:// links, the camera scanner and secure session storage.
     #[cfg(target_os = "android")]
