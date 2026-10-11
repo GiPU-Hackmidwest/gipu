@@ -14,11 +14,15 @@ pub fn run() {
     #[cfg(desktop)]
     let builder = builder
         .manage(worker::WorkerManager::default())
+        .manage(worker::ModelManager::default())
         .invoke_handler(tauri::generate_handler![
             worker::worker_defaults,
             worker::connect_worker,
             worker::worker_status,
             worker::disconnect_worker,
+            worker::model_status,
+            worker::download_model,
+            worker::cancel_model_download,
         ])
         .on_window_event(|window, event| {
             if matches!(
@@ -39,6 +43,7 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
                 _app.state::<worker::WorkerManager>().disconnect();
+                _app.state::<worker::ModelManager>().cancel();
             }
         });
 }

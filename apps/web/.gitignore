@@ -2,6 +2,8 @@ node_modules/
 dist/
 *.tsbuildinfo
 src-tauri/target/
+# Frozen worker produced by scripts/build-desktop-worker.sh.
+src-tauri/resources/worker/
 # Commit the Android Studio project; its own .gitignore excludes builds, keys and local SDK paths.
 src-tauri/gen/*
 !src-tauri/gen/android/
