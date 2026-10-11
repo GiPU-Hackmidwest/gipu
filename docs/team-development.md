@@ -6,6 +6,8 @@ Read [project context](project-context.md), [protocol](protocol.md) and [native 
 
 ## Current ownership
 
+> **V1 (from October 11, 2026):** the [V1 plan](v1-plan.md) supersedes the table below where they conflict. Claude now also owns the coordinator, protocol, identity/privacy, finalize contract, README and release builds. Codex owns the Mac/iOS presentation. Both record work in [v1-progress.md](v1-progress.md).
+
 | Workstream | Owner | Scope |
 | --- | --- | --- |
 | Native macOS and iOS UX | Arboy with Codex | React/Tauri Mac interface, SwiftUI app, shared visual language and platform-neutral frontend components |
