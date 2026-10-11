@@ -26,7 +26,7 @@ done
 TARGET_DIR="${CARGO_TARGET_DIR:-$WEB/src-tauri/target}"
 # Cargo resolves a relative target directory from its invocation directory.
 [[ "$TARGET_DIR" = /* ]] || TARGET_DIR="$WEB/src-tauri/$TARGET_DIR"
-APP="$TARGET_DIR${TARGET:+/$TARGET}/$PROFILE/bundle/macos/PocketGrid.app"
+APP="$TARGET_DIR${TARGET:+/$TARGET}/$PROFILE/bundle/macos/GiPU.app"
 
 # Only post-process a bundle recreated by this invocation, never a stale release.
 BUILD_STAMP="$(mktemp)"

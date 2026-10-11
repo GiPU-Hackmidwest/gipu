@@ -31,18 +31,18 @@ check() {
   [[ "$(cat "$expected/Contents/Resources/worker/probe")" = frozen ]]
 }
 unset CARGO_TARGET_DIR
-check "$WEB/src-tauri/target/release/bundle/macos/PocketGrid.app"
+check "$WEB/src-tauri/target/release/bundle/macos/GiPU.app"
 # A later debug build must leave an existing release artifact alone.
-echo stale > "$WEB/src-tauri/target/release/bundle/macos/PocketGrid.app/Contents/Resources/worker/probe"
-check "$WEB/src-tauri/target/debug/bundle/macos/PocketGrid.app" --debug
-[[ "$(cat "$WEB/src-tauri/target/release/bundle/macos/PocketGrid.app/Contents/Resources/worker/probe")" = stale ]]
+echo stale > "$WEB/src-tauri/target/release/bundle/macos/GiPU.app/Contents/Resources/worker/probe"
+check "$WEB/src-tauri/target/debug/bundle/macos/GiPU.app" --debug
+[[ "$(cat "$WEB/src-tauri/target/release/bundle/macos/GiPU.app/Contents/Resources/worker/probe")" = stale ]]
 export CARGO_TARGET_DIR="$FIXTURE/custom target"
-check "$CARGO_TARGET_DIR/aarch64-apple-darwin/debug/bundle/macos/PocketGrid.app" -d --target aarch64-apple-darwin
-check "$CARGO_TARGET_DIR/x86_64-apple-darwin/release/bundle/macos/PocketGrid.app" --target=x86_64-apple-darwin
+check "$CARGO_TARGET_DIR/aarch64-apple-darwin/debug/bundle/macos/GiPU.app" -d --target aarch64-apple-darwin
+check "$CARGO_TARGET_DIR/x86_64-apple-darwin/release/bundle/macos/GiPU.app" --target=x86_64-apple-darwin
 export CARGO_TARGET_DIR=relative-target
-check "$WEB/src-tauri/relative-target/aarch64-apple-darwin/release/bundle/macos/PocketGrid.app" -t aarch64-apple-darwin
+check "$WEB/src-tauri/relative-target/aarch64-apple-darwin/release/bundle/macos/GiPU.app" -t aarch64-apple-darwin
 # No-bundle and successful invocations that did not create this app cannot mutate it.
-APP="$WEB/src-tauri/relative-target/aarch64-apple-darwin/release/bundle/macos/PocketGrid.app"
+APP="$WEB/src-tauri/relative-target/aarch64-apple-darwin/release/bundle/macos/GiPU.app"
 echo stale > "$APP/Contents/Resources/worker/probe"
 SKIP_BUNDLE=true EXPECTED_APP="$APP" bash "$FIXTURE/scripts/build-desktop-app.sh" --target=aarch64-apple-darwin --no-bundle >/dev/null
 [[ "$(cat "$APP/Contents/Resources/worker/probe")" = stale ]]

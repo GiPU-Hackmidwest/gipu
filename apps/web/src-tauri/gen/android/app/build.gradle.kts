@@ -14,6 +14,15 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing is used only when the local, gitignored gen/android/keystore.properties
+// exists. Without it, release APKs stay unsigned.
+val keystoreFile = rootProject.file("keystore.properties")
+val keystoreProperties = Properties().apply {
+    if (keystoreFile.exists()) {
+        keystoreFile.inputStream().use { load(it) }
+    }
+}
+
 android {
     compileSdk = 37
     namespace = "dev.pocketgrid.app"
@@ -24,6 +33,16 @@ android {
         targetSdk = 37
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    if (keystoreFile.exists()) {
+        signingConfigs {
+            create("release") {
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -39,6 +58,9 @@ android {
             }
         }
         getByName("release") {
+            if (keystoreFile.exists()) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                enable = true
             }
