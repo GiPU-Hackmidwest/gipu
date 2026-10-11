@@ -37,6 +37,12 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Codex · remove leftover merge marker (`fix/progress-conflict-marker`)
+
+- Removed the stray conflict marker introduced in PR #41 while preserving both teams' progress entries. No criterion status changed.
+- Verification: tracked text files checked for conflict markers; `git diff --check` passed. Documentation-only cleanup; no app rebuild or deployment needed.
+- **Handoff / Open questions:** none.
+
 ### 2026-10-11 · Claude · Stripe test key verified end-to-end and enabled on hosted grid
 
 - **Verification:** Real Stripe test-mode API integration verified end-to-end locally and on the hosted coordinator using the configured `sk_test_` key.
@@ -63,7 +69,6 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 - **iOS:** final source typecheck, contract/lifecycle/privacy harnesses and host Xcode Run passed on iPhone 17 Pro Max / iOS 26.2. Arboy opened the Leaderboard tab; its stale offline test grid produced the expected inline retry state without repeated modal polling errors. Normal Activity sign-out and Password sign-in connected it to the isolated local fixture. The rendered clay screen showed 63 points, two of three goals done and four public members; Available changed the account rank from fourth to third with 20 minutes. Leave immediately removed the public row (four members to three) while retaining 63 private points, then Join restored it. User tab taps bypassed the simulator's missing automation targets; exposed form/filter/membership controls worked through accessibility. These are controlled fixture metrics, not physical phone or live inference results.
 - **Handoff:** current source builds can use the deployed endpoints. No release workflow was run and no new installer was published for #37; keep existing release instructions and manual-only workflow. This follow-up records evidence only, so the deployed application commit remains `21a4372`. Physical phone contribution/camera and full accessibility checks remain the V1 handoff, separate from these leaderboard checks.
 - **Open questions:** none on rollout or metric/privacy behavior.
->>>>>>> origin/main
 
 ### 2026-10-11 · Codex · weekly leaderboard (PR #37, `feat/weekly-leaderboard`, review)
 
