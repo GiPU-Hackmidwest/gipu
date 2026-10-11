@@ -44,7 +44,7 @@ Akamai does not discover hardware or install image models automatically. PocketG
 | services/coordinator/server.py | Load local environment and launch coordinator |
 | workers/python/worker.py | Device registration, heartbeats, claims, local image inference, cancellation and completion uploads |
 | apps/web/ | React/TypeScript interface and browser image finalizer |
-| apps/web/src-tauri/ | Rust/Tauri desktop shell; Python inference worker remains a separate process |
+| apps/web/src-tauri/ | Rust/Tauri desktop shell; explicit Connect launches a prepared Python inference worker as a managed local process, initially paused |
 | apps/ios/ | SwiftUI app, Keychain sessions, foreground image processing and local notifications |
 | deploy/ | Coordinator Docker image, Compose, Caddy HTTPS and workshop instructions |
 | benchmarks/ | Independent local-model tests and recorded exploratory CPU evidence |
@@ -99,7 +99,7 @@ Tiny-SD is the live default. Benchmark PR #1 was merged into main before this gu
 
 The initial 512px CPU comparison used two threads and six measured images per model: Tiny-SD at twelve steps had a 16.725-second median; SD-Turbo at four steps had a 5.372-second median. Sampled peak process RSS was 7898.5 MiB and 11236.3 MiB. The baseline overlapped model downloading/loading and had uncontrolled background activity. These are exploratory generation-only measurements, not end-to-end latency, GPU performance or proof of quality superiority. Visual prompt-following errors occurred in both. See benchmarks/cpu-baseline.json.
 
-Two threads were a conservative demo setting, not the Mac's capacity. Arboy's Mac has an M4 Pro and 48GB unified memory. The tool process reported MPS unavailable; this does not prove the machine lacks GPU capability. GPU access, broader model comparisons and a better image model remain on Arboy's workstream.
+Two threads were a conservative demo setting, not the Mac's capacity. Arboy's Mac has an M4 Pro and 48GB unified memory. The tool process reported MPS unavailable, while the user's normal Terminal reported it available. A subsequent native Mac app test loaded Tiny-SD on MPS, connected paused, and generated a real 256px image at twelve steps in 4.06 seconds, accepted by the coordinator for six credits. This is one generation-only smoke measurement, not a quality or throughput benchmark and not comparable to the 512px CPU baseline. Broader GPU comparisons and a better image model remain on Arboy's workstream.
 
 Future routing may choose a local model or an explicitly permitted cloud image provider. Filter by capabilities, hardware, loaded model, queue, quality requirements, deadline and budget before any optional classifier. Short prompts are not necessarily easy images. Jev/Decision API integration is only a proposal; no classifier or cloud image fallback is currently implemented. Keep planning-provider choice separate from image-model choice.
 

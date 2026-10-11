@@ -38,7 +38,7 @@ In the browser, **Start sharing** to contribute image exports, then request “a
 ## Apps
 
 - **Web:** React/TypeScript; create jobs, authenticated image gallery, device controls, receipts, event notifications, and actual foreground canvas work.
-- **Mac:** Tauri/Rust shell around the same interface with native notification opt-in. `cd apps/web && npm run tauri dev`. For a standalone app: `npm run tauri build`. The Python model worker is a separate local process for this prototype; the Mac interface controls it through the coordinator.
+- **Mac:** Tauri/Rust shell around the same interface with native notification opt-in. `cd apps/web && npm run tauri dev`. For a standalone app: `npm run tauri build`. After preparing the Python environment and model above, **Connect installed worker** launches it locally, paired to the current account and paused. Set limits and press **Start sharing** on its device card. Disconnect, Leave or app exit stops the managed process and releases model memory. The app does not install Python or download models; see [Mac setup](apps/web/README.md).
 - **iPhone/iPad:** Native SwiftUI app in `apps/ios/PocketGrid.xcodeproj`. See [iOS setup](apps/ios/README.md). It performs foreground CoreGraphics image export, keeps tokens in Keychain, pauses on backgrounding, and shows local notifications while running. Physical-device installation requires your Apple signing team.
 
 For multiple physical devices, run the coordinator with `POCKETGRID_HOST=0.0.0.0`, use the Mac's LAN IP in clients and put devices on the same trusted Wi-Fi/hotspot. Set a private join code. On a phone, `localhost` refers to that phone. For internet use, deploy with HTTPS; see [Akamai deployment](deploy/README.md).
