@@ -1,121 +1,211 @@
-# PocketGrid
+# GiPU
 
-**Generate images on participating laptops; coordinate the work through a small server.** A phone or browser can finish the generated image, track the work and manage its contribution. No image-generation API is called. This prototype proves local inference, task handoff, opt-in controls, failure recovery and an integer credit ledger.
+**AI images made on laptops that people choose to share, finished on phones, tracked by one small server.** No cloud image API is called. Each laptop generates whole images with a local model; a phone, browser or Android device finishes and verifies them; a coordinator hands out the work and keeps a sandbox credit ledger.
 
-The first workload is a prompt → independently generated image variants → device-side PNG export. The model is not split across phones. Each capable laptop handles a whole image. A failed generation restarts on another laptop; it does not resume a diffusion checkpoint. Phones apply a small fixed pixel transform, so their work is real but intentionally limited.
+> GiPU is the product name. The repository, app identifiers and some screens still say PocketGrid while the rename is in progress.
 
-New to the project? Start with [the full project context](docs/project-context.md), including what runs on each device and the Claude/Codex ownership split.
+```text
+ Mac app · Android app · iPhone app · browser
+                  │  HTTPS, bearer sessions, polling
+                  ▼
+     Coordinator (FastAPI + SQLite)  ─ optional Strands planner
+       leases · retries · PNG checks · credit ledger
+                  │  workers claim, heartbeat, upload
+        ┌─────────┴───────────────┐
+ Laptop: Python + PyTorch      Phone / browser / Android:
+ generates whole images        finishes and verifies images
+```
 
-## Start locally
+## What you need
 
-Requires Python3.11, Node22, and approximately3GB free for the laptop worker and model. Additional disk is needed for native build caches. A fresh clone needs the setup commands below; local environments and model weights are not committed.
+| To run | Install |
+| --- | --- |
+| Coordinator and web app (always) | git, Python 3.11 or 3.12, Node 22+ |
+| A laptop that generates images | The same Python, about 3 GB free (PyTorch plus a 1 GB model) |
+| Mac app | Rust via [rustup](https://rustup.rs), Xcode Command Line Tools; [uv](https://docs.astral.sh/uv/) for the bundled-worker build |
+| Android app | Android SDK Platform 37 and build tools, NDK 27, JDK 17, `rustup target add aarch64-linux-android` |
+| iPhone app | Xcode 26.2+ with the iOS platform installed; an Apple team only for a physical phone |
+| A hosted grid | A Linux VM with Docker and Compose v2, ports 80 and 443 open |
 
-```sh
+## 1. Run a grid on one computer
+
+```bash
 git clone https://github.com/pocketgrid-hackmidwest/pocketgrid.git
 cd pocketgrid
-cp .env.example .env  # first setup only; preserve an existing configuration
-# The coordinator's other settings have built-in defaults; planner settings are below.
+cp .env.example .env
 ./scripts/setup.sh
 ./scripts/server.sh
 ```
 
-Open **http://127.0.0.1:8787**. Enter a name and the join code from `.env` (`pocketgrid-demo` locally). Joining grants100 sandbox units and leaves contribution off. For browser development, `npm --prefix apps/web run dev` uses port5173 and proxies the coordinator.
+`setup.sh` creates `.venv`, installs the coordinator and builds the web app. It picks `python3.12` or `python3.11` automatically; set `POCKETGRID_PYTHON` to use a specific interpreter.
 
-On a laptop that will generate images:
+Open **http://127.0.0.1:8787** and join with the code in `.env` (`pocketgrid-demo` locally). You get 100 sandbox credits. Sharing stays off until you turn it on.
 
-```sh
-python3.11 -m venv workers/python/.venv
-workers/python/.venv/bin/pip install -r workers/python/requirements.txt
-workers/python/.venv/bin/python workers/python/worker.py prepare
-workers/python/.venv/bin/python workers/python/worker.py run \
-  --server http://127.0.0.1:8787 --name 'Laptop owner' \
-  --device-name 'Generation laptop' --share --generate-only
+To make this computer generate images, open a second terminal:
+
+```bash
+./scripts/setup-worker.sh
+workers/python/.venv/bin/python workers/python/worker.py run --device-name "My laptop" --share
 ```
 
-`--share` is explicit opt-in. Omit it to connect paused. The default worker identity persists in an ignored mode0600 file. To control the laptop under the same account as the web/Mac app, use **Copy worker pairing token** in that app and set `POCKETGRID_SESSION_TOKEN` in the worker's environment before its first registration. Treat that token like a password; never commit it. Use a new `--identity` path when pairing a different account.
+`setup-worker.sh` installs PyTorch and downloads the pinned [Tiny-SD](https://huggingface.co/segmind/tiny-sd) model once. `--share` is the explicit opt-in; leave it out to connect paused. Without `--generate-only` this worker also finishes images, so one computer can complete a whole request.
 
-In the browser, **Start sharing** to contribute image exports, then request “a cheerful cat riding a tiny bicycle.” Use256px/12steps for a quick systems test, or512px/24steps for a clearer demonstration. Multiple variants can run independently on different laptops. The worker's `--generate-only` flag leaves finalization to phones/browsers; omit it for a single-laptop end-to-end test.
+Back in the browser, go to **Create**, describe an image and press **Create**. 256 px and 12 steps is the quick test.
 
-## Apps
+The worker joins as its own account. To run it under your browser account instead, copy the worker pairing token from the app and set `POCKETGRID_SESSION_TOKEN` before the worker's first run. Treat that token like a password.
 
-- **Web:** React/TypeScript; create jobs, authenticated image gallery, device controls, receipts, event notifications, and actual foreground canvas work.
-- **Mac:** Tauri/Rust shell around the same interface with native notification opt-in. `cd apps/web && npm run tauri dev`. For a standalone app: `npm run tauri build`. After preparing the Python environment and model above, **Connect worker** launches it locally, paired to the current account and paused. Set limits and press **Start sharing** on its device card. Disconnect, Leave or app exit stops the managed process and releases model memory. This development flow does not install Python or download models. `npm run build:desktop` instead produces an app with the worker bundled and a **Download model** button; see [Mac setup](apps/web/README.md).
-- **Android:** the same Tauri shell as a requester and export device; it does not run the Python worker. Needs the Android SDK, NDK 27, JDK 17 and `rustup target add aarch64-linux-android`. With `ANDROID_HOME`, `NDK_HOME` and `JAVA_HOME` set: `cd apps/web && npm run tauri android dev` for a device or emulator, or `npm run tauri android build -- --debug --target aarch64 --apk` for an APK. Enter the coordinator's https:// address on the join screen (or build with `VITE_DEFAULT_COORDINATOR`). Like the browser, sharing pauses when the app goes to the background. Release signing is not set up yet.
-- **iPhone/iPad:** Native SwiftUI app in `apps/ios/PocketGrid.xcodeproj`. See [iOS setup](apps/ios/README.md). It performs foreground CoreGraphics image export, keeps tokens in Keychain, pauses on backgrounding, and shows local notifications while running. Physical-device installation requires your Apple signing team.
+For frontend work with hot reload, run `npm --prefix apps/web run dev` and open http://localhost:5173. It proxies `/api` to the coordinator.
 
-For multiple physical devices, run the coordinator with `POCKETGRID_HOST=0.0.0.0`, use the Mac's LAN IP in clients and put devices on the same trusted Wi-Fi/hotspot. Set a private join code. On a phone, `localhost` refers to that phone. For internet use, deploy with HTTPS; see [Akamai deployment](deploy/README.md).
+## 2. Mac app
 
-## Control and credits
+```bash
+cd apps/web
+npm run tauri dev
+```
 
-- Explicit start/pause, one active task/device, maximum image size, CPU-thread limit for Python inference, and timed sharing sessions. These are workload limits, **not** hard system-wide CPU/GPU-percent or RAM caps. Pausing inference takes effect at the next denoising step after a heartbeat update (normally within3seconds plus the current step). Loaded model memory stays resident while the worker process runs; quit it to release that memory.
-- Current stage, progress, backend, CPU use and process memory are reported by laptop workers. A browser/iPhone contributes only while visible; returning requires explicit start.
-- Quote =6credits per generated image +1per accepted export +1platform fee per successful job. Reserve the user's budget first, transfer accepted-task payments exactly once, then refund unused credits. Cancellation keeps completed-task payments and refunds the rest without a platform fee. Receipts show every component.
-- These are **sandbox service credits with no cash value**, not cash payouts or AI credits. The purpose is testing compensation for device work. Flex's fintech fit is the reservation/settlement/receipt flow; no Flex payment API is claimed.
+On the join screen, enter `http://127.0.0.1:8787` for your local grid. **Contribute** can connect the worker you prepared with `setup-worker.sh`; it starts paused until you turn sharing on.
 
-## Strands and cloud
+To build a standalone app with the image worker inside it:
 
-The real AWS Strands SDK has bounded tools to inspect devices, quote the authorized request, choose capable device IDs and submit the job. The queue honors validated choices for up to45seconds, falling back if selected devices are unavailable. Background agent reviews inspect actual failures and completed receipts; they can redirect queued work using a guarded update that rejects stale decisions. Running tasks, leases and accepted payments remain under deterministic server control. Tool records are stored in the job plan. The model cannot change the authorized prompt, count or budget.
+```bash
+npm --prefix apps/web run build:desktop
+```
 
-Lease expiry runs independently of model calls. Reviews have durable claims, bounded model/tool calls and at most three attempts per event; a provider failure cannot prevent work recovery or settlement. A route is a temporary preference, not a promise that a particular device will stay connected.
+The app appears in `apps/web/src-tauri/target/release/bundle/macos/`. It downloads the model (about 1 GB) from **Contribute** the first time. The build is unsigned: on first launch, Control-click the app and choose **Open**, or allow it in **System Settings → Privacy & Security**. More detail: [apps/web/README.md](apps/web/README.md).
 
-Choose one planner mode in `.env`:
+## 3. Android app
+
+Point the build at your SDK, NDK and JDK 17 (paths shown for a default Android Studio install on macOS):
+
+```bash
+export ANDROID_HOME="$HOME/Library/Android/sdk"
+export NDK_HOME="$ANDROID_HOME/ndk/27.1.12297006"
+export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+```
+
+Run on a connected device or a running emulator:
+
+```bash
+cd apps/web
+npm run tauri android dev
+```
+
+Or build an installable debug APK and install it:
+
+```bash
+cd apps/web
+npm run tauri android build -- --debug --target aarch64 --apk
+adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+```
+
+On the join screen use `http://10.0.2.2:8787` from the emulator, or your computer's network address from a phone (see section 5). Debug builds allow plain `http://`; release builds require an `https://` grid. Android finishes images only, and only while the app is open.
+
+## 4. iPhone app
+
+Open `apps/ios/PocketGrid.xcodeproj` in Xcode, choose the **PocketGrid** scheme and run it on a simulator. For a physical iPhone, pick your Apple team under **Signing & Capabilities** first, and do not commit that change. Join with `http://127.0.0.1:8787` in the simulator, or your computer's network address on a phone. The phone finishes images while the app is open.
+
+Command-line simulator build, from `apps/ios`:
+
+```bash
+xcodebuild -project PocketGrid.xcodeproj -scheme PocketGrid -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath .build/DerivedData CLANG_MODULE_CACHE_PATH="$PWD/.build/ModuleCache" SWIFT_MODULE_CACHE_PATH="$PWD/.build/SwiftModuleCache" CODE_SIGNING_ALLOWED=NO build
+```
+
+More detail and the pixel checks: [apps/ios/README.md](apps/ios/README.md).
+
+## 5. Phones and other laptops on your network
+
+Start the coordinator so other devices can reach it, and set a private join code in `.env` first:
+
+```bash
+POCKETGRID_HOST=0.0.0.0 ./scripts/server.sh
+```
+
+Find your computer's address with `ipconfig getifaddr en0` (macOS) and join from other devices with `http://THAT-ADDRESS:8787`. On a phone, `127.0.0.1` means the phone itself. Event and campus Wi-Fi often blocks device-to-device traffic; use a personal hotspot or a hosted grid instead.
+
+Another laptop can generate images for the same grid:
+
+```bash
+./scripts/setup-worker.sh
+workers/python/.venv/bin/python workers/python/worker.py run --server http://THAT-ADDRESS:8787 --join-code YOUR-CODE --device-name "Second laptop" --share
+```
+
+## 6. Host a grid on the internet
+
+On a Linux VM with Docker, from a copy of the repository:
+
+```bash
+cp deploy/.env.example deploy/.env
+docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
+```
+
+Set your domain and a private join code in `deploy/.env` first. Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
+
+## 7. Optional: AI planner
+
+By default the coordinator queues work directly. To have a Strands agent choose devices, set one mode in `.env` and restart the coordinator:
 
 ```dotenv
-# Direct pipeline; no agent or model call. Always labeled manual.
+# Default: no model call.
 POCKETGRID_AGENT_MODE=manual
 
-# Strands using the Akamai workshop's hosted chat model:
+# Akamai workshop chat model:
 # POCKETGRID_AGENT_MODE=akamai
 # AKAMAI_BASE_URL=https://ws.akamai-workshops.com/v1
 # AKAMAI_CHAT_MODEL=hackathon-chat
 # AKAMAI_API_KEY=your-team-key
 
-# Real Strands using a local tool-capable model already installed in Ollama:
+# A local tool-capable model in Ollama:
 # POCKETGRID_AGENT_MODE=ollama
 # POCKETGRID_OLLAMA_MODEL=llama3.2:latest
 
-# Real Strands using Amazon Bedrock:
+# Amazon Bedrock:
 # POCKETGRID_AGENT_MODE=bedrock
-# POCKETGRID_BEDROCK_MODEL=your-accessible-tool-capable-model-id
+# POCKETGRID_BEDROCK_MODEL=your-tool-capable-model-id
 # AWS_REGION=us-east-1
 # AWS_PROFILE=your-profile
 ```
 
-Selecting the agent in the UI without a configured provider returns an explicit error and reserves nothing. Bedrock is only the planner; image inference still runs on contributors. Local Strands/Ollama was exercised during verification; Bedrock needs valid account credentials and model access. The Akamai HTTPS coordinator has completed a real laptop-worker job in manual mode; hosted Strands planning and physical-phone finalization remain to be verified. See [hosted verification](docs/verification.md#hosted-real-worker-check). DevRev is optional and is not wired into this first compute prototype.
+The planner only picks among devices that are online and opted in. It cannot change the prompt, image count or budget, and image generation still runs on contributors' laptops. Choosing the planner without a configured provider returns an error and reserves nothing.
 
-The Akamai workshop provider is implemented using Strands' OpenAI-compatible adapter and the documented `hackathon-chat` alias. Its HTTP/tool flow has adapter tests, and live chat authentication plus a real Strands job submission were subsequently verified during the October 10 demo. See [workshop setup](deploy/workshop.md). The team model key is separate from access to deploy a VM.
+## 8. Run the tests
 
-## Architecture and checks
+From the repository root:
 
-```text
-React web / Tauri Mac / SwiftUI iPhone
-              │ HTTPS + bearer sessions (polling)
-              ▼
-Akamai-ready FastAPI coordinator ─ Strands planner (Akamai, Bedrock or Ollama)
-   SQLite transactions • fenced15s leases • PNG validation • credit ledger
-              │ outbound workers claim/heartbeat/upload
-       ┌──────┴──────────────┐
-Python + PyTorch/diffusers   Browser canvas / iPhone CoreGraphics
-whole-image local inference fixed pixel export and verification
-```
-
-One coordinator and one durable SQLite volume are deliberate prototype constraints. No distributed database, Kafka cluster or Kubernetes is needed for six devices. [Demo steps](docs/demo.md) walk through a run; [protocol](docs/protocol.md) defines the contract; [verification](docs/verification.md) records observed results and remaining checks.
-
-```sh
-.venv/bin/python -m pytest tests/test_coordinator.py tests/test_routing.py tests/test_agent.py tests/test_akamai.py tests/test_lifespan.py -q
-workers/python/.venv/bin/pip install -r workers/python/requirements-dev.txt
+```bash
+.venv/bin/python -m pytest tests -q --ignore=tests/test_worker.py --ignore=tests/live_agent_routing.py --ignore=tests/live_worker_recovery.py --ignore=tests/container_smoke.py
 workers/python/.venv/bin/python -m pytest tests/test_worker.py -q
-npm --prefix apps/web run build
+cd apps/web && node --experimental-strip-types --test tests/*.test.mjs && npm run build && cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-The queue tests cover conserved funds, duplicate reservation/payment, concurrent claims, lost leases, late results, pause/time limits, forged exports, cancellation and restart persistence. The native app has pixel-parity and live API checks described in its README. `tests/live_worker_recovery.py` starts an isolated temporary coordinator and two local worker processes, verifies abrupt-death recovery and pause/refund behavior, then tears them down. It needs both Python environments and a prepared model.
+`tests/live_worker_recovery.py` (two real workers, needs a prepared model) and `tests/container_smoke.py` (needs a locally built Docker image) are slower end-to-end checks; see [docs/verification.md](docs/verification.md).
 
-## Prototype boundaries
+## Troubleshooting
 
-An invited worker can read its prompt and inputs. Use public demo material. PNG size/format are checked for generated images; this is not proof that an untrusted device ran the requested model or produced a useful image. Export verification compares every pixel against the known transform. A public paid network needs stronger verification, device reputation, account recovery, abuse controls and real payment settlement. Efficiency, cost savings and environmental benefit remain measurements to make across actual devices; this prototype does not prove them.
+| Problem | Fix |
+| --- | --- |
+| `Install Python 3.11 or 3.12` | Install one, or point `POCKETGRID_PYTHON` at it. With pyenv: `POCKETGRID_PYTHON=$(pyenv prefix 3.12.9)/bin/python3.12 ./scripts/setup.sh` |
+| `Incorrect grid join code` | Use the code from `.env` (or `deploy/.env`), and restart the coordinator after changing it. |
+| A phone cannot connect | Use the computer's network address, not `127.0.0.1`, start the coordinator with `POCKETGRID_HOST=0.0.0.0`, and check the Wi-Fi allows device-to-device traffic. |
+| A request stays on "Finishing" | No device is finishing images. Turn on sharing in a browser or phone, or run a worker without `--generate-only`. |
+| `xcodebuild`: "iOS 26.x is not installed" | Install the iOS platform in **Xcode → Settings → Components**. |
+| Android build cannot find the SDK or NDK | Set `ANDROID_HOME`, `NDK_HOME` and `JAVA_HOME` as in section 3. |
+| The release Android app cannot reach a local grid | Release builds block plain `http://`. Use a debug build locally, or an `https://` grid. |
+| The Mac app "cannot be opened" | It is unsigned. Control-click → **Open**, or allow it in **System Settings → Privacy & Security**. |
+| Worker exits with a missing-model error | Run `./scripts/setup-worker.sh` once while online. |
 
-The model is [Segmind Tiny-SD](https://huggingface.co/segmind/tiny-sd), pinned to its published revision and CreativeML Open RAIL-M license. Its small size helps demonstrate local generation; visual quality is modest. Relevant primary references: [Strands tools](https://strandsagents.com/docs/user-guide/sdk/tools/), [Tauri](https://v2.tauri.app/), and the [HackMidwest sponsor requirements](https://hackmidwest.com/).
+## What this prototype is and is not
 
-## Team development
+- **Credits are sandbox units with no cash value.** A request reserves its budget, pays 6 per generated image and 1 per finished image exactly once, charges a 1-credit fee on success and refunds the rest.
+- **Sharing is always explicit.** Joining or connecting never starts contribution. Pause, timed sessions, image-size and CPU-thread limits apply. These are workload limits, not hard CPU, GPU or memory caps.
+- **Each account sees its own requests and images.** Other members' devices show only as anonymous counts. Contributors still receive the prompt and image for the task they run, so use public, suitable prompts.
+- **Verification is limited.** The coordinator checks image format and size, and that every pixel of a finished image matches what the finishing step must produce. It cannot prove which model an untrusted device ran or that an image is good.
+- **Tiny-SD is small.** It makes local generation practical; image quality is modest. It is pinned to its published revision under the CreativeML Open RAIL-M license.
+- One coordinator with one SQLite volume is a deliberate prototype choice. Savings in cost or energy have not been measured.
 
-Read [the work split and handoff guide](docs/team-development.md) before starting a feature branch. Codex and Claude share the instructions in AGENTS.md; CLAUDE.md points to the same guide. Configure your own local credentials and Apple signing team.
+## Project docs
+
+- [Project context](docs/project-context.md): what runs where and why.
+- [Protocol](docs/protocol.md): the API the apps and workers use.
+- [V1 plan](docs/v1-plan.md) and [V1 progress](docs/v1-progress.md): current work split and status.
+- [Verification](docs/verification.md) and [demo steps](docs/demo.md): recorded results and how to run a demo.
+- Component guides: [web and Mac](apps/web/README.md), [iPhone](apps/ios/README.md), [worker](workers/python/README.md), [deployment](deploy/README.md), [benchmarks](benchmarks/README.md).

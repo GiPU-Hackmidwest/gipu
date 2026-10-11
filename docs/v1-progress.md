@@ -21,13 +21,13 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C3 | Private sessions | review: server scoping; todo: hosted deploy | todo: own-only presentation |
 | C4 | No black text on orange | — | todo |
 | C5 | Developer options page | — | todo |
-| C6 | Create images / Finish images toggles | todo: verify on Android | todo |
+| C6 | Create images / Finish images toggles | todo: verify on Android (APK now builds and runs on the emulator) | todo |
 | C7 | Activity without sensitive info | review: server sanitizing | todo: Activity presentation |
 | C8 | Device counts, no test devices | review: `grid` counts (stale devices excluded); todo: hosted DB cleanup if still needed | todo: landscape on Mac/iOS |
 | C9 | Logo | blocked on Phase 0: Tauri icons | blocked on Phase 0: iOS icon, in-app mark |
 | C10 | Rename to GiPU | todo: docs, Tauri/Android names | todo: in-app copy |
 | C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | todo: shimmer, iOS finalize, Mac/iOS notify |
-| C12 | Replicable README | todo | review iOS/Mac sections |
+| C12 | Replicable README | review: rewritten and checked from a fresh clone (`docs/v1-readme`) | review iOS/Mac sections |
 | C13 | Desktop sidebar | — | todo |
 | C14 | Remove "About this grid" | — | todo |
 | C15 | Contribute layout on large screens | — | todo |
@@ -35,6 +35,32 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. Status: **todo**.
 
 ## Log
+
+### 2026-10-11 · Claude · README from a fresh clone (branch `docs/v1-readme`, stacked on the server PR)
+
+- **README.md** is rewritten as numbered paths:
+  1. one computer
+  2. Mac app
+  3. Android
+  4. iPhone
+  5. phones and laptops on a LAN
+  6. hosted grid
+  7. optional planner
+  8. tests
+
+  It adds a prerequisites table, a troubleshooting table and honest prototype limits.
+- **Scripts.**
+  - `scripts/python.sh` (sourced) picks a working Python 3.12 or 3.11, or honors `POCKETGRID_PYTHON`. Before this, `setup.sh` hard-coded `python3.11`, which fails on Macs that have only 3.12 or a pyenv shim.
+  - New `scripts/setup-worker.sh` creates the worker environment and downloads the model in one step.
+- **Verification** from a fresh `git clone`, on this Mac (macOS 26.6.2, Apple silicon):
+  - `setup.sh` passed in 30 s; `setup-worker.sh` passed in 3 min, including the PyTorch install and the Tiny-SD download.
+  - The coordinator served the web app and `/api/health`.
+  - The README worker command connected on MPS.
+  - **First native Android build of this app:** `npm run tauri android build -- --debug --target aarch64 --apk` passed in 1 min 19 s, at the README's APK path. Installed on the `Medium_Phone` emulator, it joined `http://10.0.2.2:8787`, submitted a request, the worker generated it (5.6 s) and finished it, and the app showed the image, "completed", 92 available and an 8-credit receipt.
+  - The README test block passed: 70 coordinator, 33 worker, 42 web, `npm run build`, and Rust 15 passed with 1 ignored.
+  - **Not verified:** the iOS build (this Mac has no iOS simulator platform installed, so `xcodebuild` cannot find a destination), launching the Mac app with `tauri dev`, `build:desktop`, the Docker deploy, and any physical phone.
+- **Seen on Android with the scoped server:** the "Your grid" card showed **0 laptops / 0 connected** while a laptop was sharing, because the current UI counts `state.devices`, which now holds only your own devices. The page still says "Shared with grid members" and shows the green border; the border is expected until the finishers switch.
+- **Handoff (Codex):** switching the device landscape to `state.grid` is needed before the server PR is deployed, or every member will see an empty grid. Please review README sections 2 (Mac) and 4 (iPhone).
 
 ### 2026-10-11 · Claude · coordinator V1 (branch `feat/v1-server-identity-privacy`, stacked on the contract PR)
 
