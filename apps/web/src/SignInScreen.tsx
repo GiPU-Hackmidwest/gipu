@@ -1,7 +1,7 @@
 import { Brand } from './Brand';
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Api, errorMessage, isAndroidApp, isDesktop, isMobileApp } from './api';
+import { Api, errorMessage, isAndroidApp, isDesktop, isMacDesktop, isMobileApp } from './api';
 import { joinGrid, normalizeServer, parseGridLink, redeemLinkCode, signInWithGridLink, signInWithPassword } from './identity';
 import type { GridLink, Session } from './types';
 
@@ -11,6 +11,7 @@ const detectorClass = () => (globalThis as typeof globalThis & { BarcodeDetector
 const defaultServer = () => isDesktop ? import.meta.env.VITE_DEFAULT_COORDINATOR ?? 'https://66-228-53-243.ip.linodeusercontent.com' : isMobileApp ? import.meta.env.VITE_DEFAULT_COORDINATOR ?? '' : '';
 
 export function SignInScreen({ onSession, incomingLink, onDismissLink, linkError }: { onSession: (session: Session) => Promise<void>; incomingLink?: GridLink | null; onDismissLink?: () => void; linkError?: string }) {
+  const clientName = isAndroidApp ? 'Android' : isMacDesktop ? 'Mac' : 'Browser';
   const [server, setServer] = useState(defaultServer);
   const [text, setText] = useState('');
   const [addressOpen, setAddressOpen] = useState(false);
@@ -84,17 +85,17 @@ export function SignInScreen({ onSession, incomingLink, onDismissLink, linkError
     if (parsed) { setLink(parsed); setError(''); return; }
     if (text.trim().toLowerCase().startsWith('gipu:')) { setError('This link is not valid. Ask for a new one.'); return; }
     if (isMobileApp && !server.trim()) { setAddressOpen(true); setError('Enter the grid address for this code.'); return; }
-    void authenticate(() => redeemLinkCode(new Api(normalizeServer(server), ''), text, 'GiPU'));
+    void authenticate(() => redeemLinkCode(new Api(normalizeServer(server), ''), text, clientName));
   }
   function manual(event: FormEvent) {
     event.preventDefault();
-    void authenticate(() => mode === 'join' ? joinGrid(new Api(normalizeServer(server), ''), joinCode, name)
-      : signInWithPassword(new Api(normalizeServer(server), ''), username, password, 'GiPU'));
+    void authenticate(() => mode === 'join' ? joinGrid(new Api(normalizeServer(server), ''), joinCode, name, clientName)
+      : signInWithPassword(new Api(normalizeServer(server), ''), username, password, clientName));
   }
   return <main className="onboarding account-onboarding"><Brand /><h1><em>Welcome to</em><br />GiPU.</h1><p>{canScan ? 'Scan a QR to join.' : 'Link your account.'}</p>
     <section className="panel stack">{!canScan && !link && !unsaved && <p>Paste a link or type a code from your other device.</p>}
       {unsaved ? <><h2>Save your sign-in</h2><button disabled={busy} onClick={() => void authenticate(async () => unsaved)}>Try again</button></> : <>
-        {link ? <div className="stack"><h2>{link.kind === 'link' ? 'Link your account' : 'Join this grid'}</h2><p className="grid-address">{link.server}</p><small>{link.kind === 'link' ? 'Use your existing credits.' : 'Create a new account.'}</small><button disabled={busy} onClick={() => void authenticate(() => signInWithGridLink(new Api(link.server, ''), link, 'GiPU'))}>{busy ? 'Joining…' : 'Continue'}</button><button className="secondary" disabled={busy} onClick={() => { setLink(null); onDismissLink?.(); }}>Cancel</button></div> : <>
+        {link ? <div className="stack"><h2>{link.kind === 'link' ? 'Link your account' : 'Join this grid'}</h2><p className="grid-address">{link.server}</p><small>{link.kind === 'link' ? 'Use your existing credits.' : 'Create a new account.'}</small><button disabled={busy} onClick={() => void authenticate(() => signInWithGridLink(new Api(link.server, ''), link, clientName))}>{busy ? 'Joining…' : 'Continue'}</button><button className="secondary" disabled={busy} onClick={() => { setLink(null); onDismissLink?.(); }}>Cancel</button></div> : <>
           {canScan && (isAndroidApp || typeof navigator.mediaDevices?.getUserMedia === 'function') && <button disabled={busy} onClick={() => { setError(''); setScanning(value => !value); }}>{scanning ? 'Stop camera' : 'Scan QR'}</button>}
           {scanning && !isAndroidApp && <video className="qr-camera" ref={video} muted playsInline aria-label="QR camera" />}
           <form className="stack" onSubmit={useCode}><label>Link or code<input value={text} onChange={event => setText(event.target.value)} autoComplete="off" autoCapitalize="none" spellCheck={false} placeholder="Paste a link or enter 10 characters" required /></label><details open={addressOpen} onToggle={event => setAddressOpen(event.currentTarget.open)}><summary>Grid address</summary><label>Address<input value={server} onChange={event => setServer(event.target.value)} inputMode="url" spellCheck={false} autoCapitalize="none" placeholder="https://your-grid" /></label></details><button disabled={busy || !text.trim()}>{busy ? 'Joining…' : 'Continue'}</button></form>

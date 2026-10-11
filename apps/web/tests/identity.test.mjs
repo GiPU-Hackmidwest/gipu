@@ -89,3 +89,15 @@ test('grid addresses reject embedded credentials and invalid origins', () => {
     assert.equal(parseGridLink(`gipu://join?grid=${encodeURIComponent(value)}&code=demo`), null);
   }
 });
+
+
+test('manual and QR joins preserve the platform session label', async () => {
+  for (const clientName of ['Mac', 'Android', 'Browser']) {
+    const manual = fakeClient('https://g.example');
+    await joinGrid(manual, 'demo', 'Guest', clientName);
+    assert.deepEqual(manual.calls[0].body, { join_code: 'demo', name: 'Guest', client_name: clientName });
+    const qr = fakeClient('https://g.example');
+    await signInWithGridLink(qr, { kind: 'join', server: 'https://g.example', code: 'demo' }, clientName);
+    assert.deepEqual(qr.calls[0].body, { join_code: 'demo', client_name: clientName });
+  }
+});

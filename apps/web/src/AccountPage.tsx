@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { Api, errorMessage } from './api';
-import { addLogin, createLinkCode, linkQrPayload } from './identity';
+import { addLogin, createLinkCode, linkQrPayload, normalizeServer } from './identity';
+import { isLocalGridAddress } from './accountLinkPresentation';
 import type { LinkCode, Session } from './types';
 
 export function AccountLinkQR({ api, session, serverTime }: { api: Api; session: Session; serverTime?: number }) {
+  const localAddress = isLocalGridAddress(session.server || location.origin);
+  const [shareAddress, setShareAddress] = useState(localAddress ? '' : session.server || location.origin);
+  const [qrAddress, setQrAddress] = useState('');
   const [code, setCode] = useState<LinkCode | null>(null);
   const clockOffset = useRef(0);
   const [now, setNow] = useState(Date.now);
@@ -18,16 +22,19 @@ export function AccountLinkQR({ api, session, serverTime }: { api: Api; session:
   async function create() {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(''); setCode(null);
-    try { const next = await createLinkCode(api); if (mounted.current) { setCode(next); setNow(Date.now() + clockOffset.current); } }
+    try {
+      const address = normalizeServer(shareAddress);
+      if (!address || isLocalGridAddress(address)) throw new Error('Use this grid’s Wi-Fi or HTTPS address.');
+      const next = await createLinkCode(api); if (mounted.current) { setQrAddress(address); setCode(next); setNow(Date.now() + clockOffset.current); } }
     catch (error) { if (mounted.current) setError(errorMessage(error)); }
     finally { pending.current = false; if (mounted.current) setBusy(false); }
   }
   const valid = code && code.expires_at * 1000 > now;
   let payload = '';
-  if (valid) { try { payload = linkQrPayload(session.server, code, location.origin); } catch { /* Unsupported origin has no shareable QR. */ } }
-  return <section className="panel stack account-link"><h2>Link another device</h2><p>Same account. Same credits.</p>
-    {valid && payload ? <><div className="account-qr"><QRCodeSVG value={payload} size={224} marginSize={4} title="Scan to link this account" /></div><code className="link-code">{code.code}</code><small>Expires in {Math.min(120, Math.max(0, Math.ceil((code.expires_at * 1000 - now) / 1000)))}s · single use</small><p className="grid-address">{session.server || location.origin}</p><small>Only share with your own device.</small></> : <p>{code ? 'Code expired. Make a new one.' : 'Scan this QR from your other device.'}</p>}
-    <button disabled={busy} onClick={() => void create()}>{busy ? 'Creating…' : code ? 'New code' : 'Show QR'}</button>{error && <p className="error" role="alert">{error}</p>}
+  if (valid) { try { payload = linkQrPayload(qrAddress, code); } catch { /* Unsupported origin has no shareable QR. */ } }
+  return <section className="panel stack account-link"><h2>Link another device</h2><p>Same account. Same credits.</p>{localAddress && <><p role="note">This address works only on this computer.</p><label>Grid address for your phone<input value={shareAddress} onChange={event => { setShareAddress(event.target.value); setCode(null); }} disabled={busy} inputMode="url" autoCapitalize="none" spellCheck={false} placeholder="http://192.168.1.10:8787" /></label><small>Enter this grid’s Wi-Fi or HTTPS address.</small></>}
+    {valid && payload ? <><div className="account-qr"><QRCodeSVG value={payload} size={224} marginSize={4} title="Scan to link this account" /></div><code className="link-code">{code.code}</code><small>Expires in {Math.min(120, Math.max(0, Math.ceil((code.expires_at * 1000 - now) / 1000)))}s · single use</small><p className="grid-address">{qrAddress}</p><small>Only share with your own device.</small></> : <p>{code ? 'Code expired. Make a new one.' : 'Scan this QR from your other device.'}</p>}
+    <button disabled={busy || !shareAddress.trim()} onClick={() => void create()}>{busy ? 'Creating…' : code ? 'New code' : 'Show QR'}</button>{error && <p className="error" role="alert">{error}</p>}
   </section>;
 }
 

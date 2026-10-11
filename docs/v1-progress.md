@@ -36,6 +36,18 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Codex · account recovery runtime check (`fix/account-link-handoff`)
+
+- Final integrated frontend tests: 83 passed; TypeScript/production build passed. In a real browser against an isolated local coordinator, a new test account stored the session label `Browser`. Account showed the loopback warning and disabled QR creation until a phone-reachable grid address is supplied. Revoking only that test session caused automatic return to sign-in; reload stayed signed out. This check did not enable contribution or create an image job; worker stop/clear ordering and retry behavior are covered by lifecycle tests.
+- Scope remains minimal: usable QR address, visible/focused incoming-link confirmation, device session labels and safe revoked-session recovery. No hosted state, signing or CI change.
+
+### 2026-10-11 · Codex · account link handoff polish (`fix/account-link-handoff`)
+
+- **Coordination:** Arboy requested the three UX corrections observed during PR #27 review: phone-unreachable loopback QR addresses, an off-screen incoming-link prompt, and indistinguishable session labels. Root explicitly authorized a backward-compatible optional `clientName` argument in Claude-owned `identity.ts` plus its regression test; the existing `/sessions` contract already accepts `client_name`.
+- **Implemented:** loopback QR links require a manually supplied Wi-Fi/hosted address for the same grid; incoming signed-in links scroll into view and receive focus; new session labels identify Mac, Android or Browser. No guessed addresses or protocol/dependency changes.
+- Root additionally authorized revoked `/state` recovery: only a current live `ApiError(401)` initiates awaited worker shutdown and secure sign-out once. Failed cleanup retains the mounted controller and credentials with a focused retry action. Ordinary errors and stale responses never clear credentials.
+- **Verification:** 83/83 frontend tests passed, including loopback address, platform label, stale/duplicate 401, and secure-delete retry regressions; TypeScript and Vite production build passed. Reused identical-lockfile dependencies locally. No CI runs, hosted mutations or new dependency downloads. Native/UI runtime recheck remains with root.
+
 ### 2026-10-11 · Codex · iOS frameless runtime (`feat/ios-invisible-finalize`)
 
 - **Coordination/gate:** reviewed PR #28's recorded hosted deployment of `a34aef0` (compatible coordinator on main `7963aca` plus Docker build fix), and PR #29's explicit iOS handoff. This satisfies the coordinator-first rollout gate; neither `grid` nor `verified` is treated as capability negotiation.
