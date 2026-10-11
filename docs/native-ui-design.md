@@ -1,6 +1,16 @@
 # Native UI design
 
-Design-phase guide, October 10, 2026. Codex owns native macOS/iOS UX and shared presentation; Claude owns the Tauri Android port. Preserve the existing compute system and API. See [team development](team-development.md).
+V1 guide, October 11, 2026. Codex owns Mac/iOS presentation; Claude owns the server, protocol, identity/privacy logic, finalize contract, Android and releases. [V1 plan](v1-plan.md) and [progress](v1-progress.md) supersede earlier design-phase ownership. Preserve existing compute behavior until an agreed contract change merges.
+
+## Current V1 direction (in progress)
+
+Use **GiPU** in Mac/iOS user-facing text now; keep the existing icon until Phase 0 logo assets arrive. Bundle identifiers and environment names stay unchanged. C4/C5/C6/C13/C14/C15 and the text rename are underway on `feat/v1-simple-controls`, based on merged PR #18. None is marked complete by this guide.
+
+Primary actions use white labels on the deeper orange below. **Developer options** is a separate page, off by default and remembered locally. CPU threads, largest image, measured usage, worker paths and pairing tokens, plus plan/device diagnostics, belong there. Technical settings must retain their existing values when hidden; opening or closing the page cannot start or stop contribution. Keep ordinary receipts and usable failure messages in the main journey.
+
+Contribute presents separate **Create images** and **Finish images** cards, using responsive columns on wide screens and a simple stack on narrow screens. The public controls are plain toggles: turning one on is the explicit Start, and turning it off pauses. First-time model download still asks before fetching roughly 1 GB; downloading or connecting alone must not silently enable work. Retain the connected/paused distinction and native disconnect behavior, with the Mac worker controller mounted across navigation. iOS exposes Finish images and remains foreground-only. The desktop sidebar becomes more compact and orderly. Remove the About this grid panel on both platforms.
+
+QR sign-in/link, privacy-scoped presentation, new aggregate grid counts and the new finalize/shimmer UI depend on Claude's Phase 1 contract and wait for its merged review. Link QR must retain the existing account; Invite QR creates a new account. Pixel-identical lossless PNG is a candidate, not an implemented replacement here. Resolve expiry/errors and old/new finalize stage semantics before changing client behavior.
 
 ## Audit and reference translation
 
@@ -16,27 +26,27 @@ The refinement gives the existing spatial layout a consistent opaque clay materi
 
 This uses shadow softness, not backdrop blur, glass effects or particles. It adds no explanatory copy: short labels, visible state and the same primary actions remain. Web increased-contrast mode replaces shadow dependence with stronger borders; iOS adds explicit outlines. Reduced-motion settings remove the optional press animation. These implementations still need a complete accessibility review in context.
 
-## Three journeys
+## Three journeys (V1 target)
 
 Joining comes first: grid address, name and join code → **Join grid**. Show the connected grid identity afterward. Sharing remains off.
 
 | Destination | Primary journey | Details on demand |
 | --- | --- | --- |
-| Create | Prompt → image count/budget → Create → Planning / Waiting / Generating / Finishing → image, Save/Share and charge/refund | Model options, planner details, per-stage device and full receipt |
-| Contribute | Mac: Download model once → Connect worker → Connected · paused → limits → Start sharing → Pause or Disconnect. iPhone: limits → Start → Pause; stay foregrounded. | Installed worker settings, resource measurements, manual pairing and technical role |
+| Create | Prompt → image count/budget → Create → Planning / Waiting / Generating / Finishing → image, Save/Share and charge/refund | Developer options: model/planner and stage/device diagnostics; receipt breakdown on demand |
+| Contribute | Mac: consent to one-time model download if needed → Create images on/off or Finish images on/off. iPhone: Finish images on/off; stay foregrounded. | Developer options: limits, worker setup, measurements and device diagnostics |
 | Activity | Recent work, earned credits and notifications | Ledger entries and accounting detail |
 
 The device landscape is functional: counts derive from live grid state, while device controls identify each actual device and its connected/sharing state. A remaining-time arc must show unknown or paused state honestly and must not invent progress. Failed and cancelled requests remain visible. Cancellation preserves accepted work and returns unused credits. A refresh error must not erase an acknowledged request or revive a cancelled one. Device labels distinguish offline, connected/paused, loading and sharing; neither joining nor connecting implies contribution.
 
 ## Minimal text rule
 
-Users should understand the screen through its labels, state and actions. Prefer one short helper line only where it changes a decision. Put infrastructure names, file paths, processor details and pairing tokens behind disclosure. Keep errors actionable and contextual. Keep the meaning of credits clear with a compact **Sandbox credits · no cash value** label; show charges and refunds in the result, with a breakdown on demand.
+Users should understand the screen through its labels, state and actions. Prefer one short helper line only where it changes a decision. Move infrastructure names, file paths, processor details and pairing tokens to the separate Developer options page. Keep errors actionable and contextual. Keep the meaning of credits clear with a compact **Sandbox credits · no cash value** label; show charges and refunds in the result, with a breakdown on demand.
 
-Use **Connect**, **Start sharing**, **Pause**, **Disconnect**, **Create**, **Save** and **Share** consistently. A connected worker can hold model memory while paused. State that in worker details; do not imply CPU threads, image size or session duration are hard GPU-percent or RAM caps. Resource measurements are observations, separate from limits.
+Use **Create images** and **Finish images** for contribution toggles, with concise state labels; use **Create**, **Save** and **Share** for requests/results. Preserve explicit Connect/Pause/Disconnect behavior in the underlying controller. A connected worker can hold model memory while paused. State that in Developer options; do not imply CPU threads, image size or session duration are hard GPU-percent or RAM caps. Resource measurements are observations, separate from limits.
 
 ## Shared tokens and contrast
 
-Light colors align across web and iOS. Each platform has a distinct adaptive dark palette:
+V1 target tokens below replace the earlier dark-on-bright-orange action pair. Application and rendered verification are in progress. Light colors align across web and iOS; each platform has a distinct adaptive dark palette:
 
 | Token | Light web/iOS | Dark web | Dark iOS |
 | --- | --- | --- | --- |
@@ -45,14 +55,14 @@ Light colors align across web and iOS. Each platform has a distinct adaptive dar
 | Inset | `#E5E7EB` | `#1B1E23` | `#171A1E` |
 | Main text | `#1C1E21` | `#F1F3F6` | `#F1F3F5` |
 | Secondary text | `#606770` | `#B4BBC6` | `#ABB3BD` |
-| Primary action | `#FF5A09` | `#FF5A09` | `#FF5A09` |
-| Action text | `#271405` | `#271405` | `#271405` |
+| Primary action | `#C34400` | `#C34400` | `#C34400` |
+| Action text | `#FFFFFF` | `#FFFFFF` | `#FFFFFF` |
 
-SwiftUI expresses the orange/action ink as normalized RGB values that round to the listed 8-bit tokens. Calculated sRGB relative-luminance contrast for these opaque token pairs:
+Calculated sRGB relative-luminance contrast for the opaque target token pairs:
 
 | Text / background | Ratio |
 | --- | --- |
-| Action text / orange | 5.65:1 |
+| White action text / orange | 5.06:1 |
 | Light main text / surface | 15.45:1 |
 | Light secondary text / surface | 5.29:1 |
 | Light secondary text / canvas | 5.28:1 |
@@ -64,13 +74,13 @@ SwiftUI expresses the orange/action ink as normalized RGB values that round to t
 | Dark iOS secondary text / surface | 6.63:1 |
 | Dark iOS secondary text / canvas | 7.89:1 |
 
-White on orange is 3.13:1, so normal-size action labels use dark ink. These token calculations do not establish a full accessibility audit: opacity, shadows, disabled/pressed states and actual rendered combinations require inspection.
+White on `#C34400` is 5.06:1, meeting the 4.5:1 target for normal-size labels. This replaces the previous dark action labels on `#FF5A09`; do not reuse that earlier orange behind white labels. These token calculations do not establish a full accessibility audit: opacity, shadows, disabled/pressed states and actual rendered combinations require inspection.
 
 Web controls have at least 44px height, visible keyboard focus, reduced-motion handling and a stronger-border option for increased contrast. iOS uses native controls and Dynamic Type. Status always includes words rather than relying on color. Confirm keyboard order, VoiceOver labels, large text, light/dark modes and narrow layouts during rendered QA.
 
 ## Bundled worker integration
 
-The Mac Contribute journey includes one-time **Download model · 1 GB** with progress and Cancel. Once ready, **Connect worker** loads the cache offline and registers paused; **Start sharing** remains a separate action. Grid communication still requires the coordinator. Ordinary users do not need Python paths or pairing tokens. Processor and worker details stay behind disclosure, preserving the minimal clay interface.
+The existing Mac model download has progress and Cancel. V1 preserves its explicit consent and cached offline model loading, then uses **Create images** as the explicit sharing control. Native Connect still registers paused before a separately authorized Start. Grid communication requires the coordinator. Ordinary users do not need Python paths or pairing tokens; processor and worker details move to Developer options.
 
 `npm run build:desktop` packages the frozen Python worker; model weights download into app data. Source builds retain the prepared-checkout development fallback. Connecting does not install packages or fetch models, and switching destinations must not disconnect the managed worker.
 
@@ -83,6 +93,10 @@ Tauri window configuration uses `create: false`; shared setup in `apps/web/src-t
 The Android workstream owns native credentials, notifications, save/share, lifecycle and permissions. Isolate those behind Android adapters. Do not infer that mobile background generation is supported, or port macOS Python-launch and filesystem assumptions into common components. The iOS app remains native SwiftUI, independent of Tauri mobile scaffolding, while sharing product language and state semantics.
 
 ## Verification scope
+
+### V1 simple controls
+
+Implementation is in progress. The action contrast above was calculated from the proposed tokens; no V1 build, rendered-screen or live-flow verification is recorded yet. The results below predate V1 and retain their original scope.
 
 ### Merge integration
 
