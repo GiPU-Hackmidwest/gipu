@@ -41,7 +41,7 @@ Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. St
 - **Coordination:** Arboy explicitly requested review, conflict resolution and merge of incoming PRs. This narrow review updates Claude-owned Android session cleanup and regression tests, and preserves both workstreams in this log.
 - Merged current main into the stacked Android branch; retained the privacy fixes and simpler contribution UI.
 - Secure storage cleanup now reports an unsuccessful durable delete, and loading a secure session removes a stale plaintext copy. Storage errors continue to fail closed.
-- Verification: 61 frontend tests pass, including stale plaintext cleanup, fail-closed storage, listener teardown and camera cancellation. Camera scans accept an AbortSignal so the UI can stop them on teardown/backgrounding. A failed cold-link read releases the warm-link listener. Physical Android QR decoding remains a team device check.
+- Verification: frontend production build, macOS Rust (15 passed, one ignored) and 61 frontend tests pass, including stale plaintext cleanup, fail-closed storage, listener teardown and camera cancellation. Camera scans accept an AbortSignal so the UI can stop them on teardown/backgrounding. A failed cold-link read releases the warm-link listener. Physical Android QR decoding remains a team device check.
 - **Handoff:** integrate the adapters into the new shared sign-in screen; retain Android-only plugin gates and unchanged bundle IDs.
 
 ### 2026-10-11 · Claude · Android QR sign-in adapters (branch `feat/v1-android-identity`, stacked on the README PR)
