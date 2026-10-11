@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Api, askNotifications, copyText, errorMessage, isDesktop, notify } from './api';
 import { BrowserWorker } from './browserWorker';
+import { shouldNotifyEvent } from './eventNotifications';
 import { jobProgress } from './jobStatus';
 import type { Device, DeviceCredential, Job, Limits, Session, Snapshot } from './types';
 
@@ -59,7 +60,7 @@ function Dashboard({ session, onSignOut }: { session: Session; onSignOut: () => 
     if (seen.current) {
       for (const event of next.events) if (!seen.current.has(event.id)) {
         seen.current.add(event.id);
-        if (notifications.current && ['task_started', 'credits_earned', 'job_completed'].includes(event.kind)) void notify(event.message).catch(() => {});
+        if (notifications.current && shouldNotifyEvent(event, next.user.id)) void notify(event.message).catch(() => {});
       }
     } else seen.current = new Set(next.events.map(event => event.id));
   }, [api]);
