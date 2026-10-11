@@ -33,7 +33,7 @@ The portable recovery script was also run on a fresh, isolated coordinator. It k
 
 ## Remaining external checks
 
-- **Akamai:** deployment files exist, but no target host/domain has been provided and no live Akamai deployment is claimed.
+- **Akamai:** the coordinator runs on the team Linode behind Caddy with a Let's Encrypt certificate for its provider hostname (commit 3544d5f, October 10, 2026). Health, web UI, HTTP→HTTPS redirect, closed port 8787, a manual job with **simulated** generation/finalizer workers (receipt 10 = 7 + 1 fee + 2 refund) and persistence of the job, images, session and certificate across `compose down`/`up` were verified. A real laptop worker, physical phone finalization and the Strands planner on the server remain unverified; the server runs in manual planner mode until its provider key is configured.
 - **Bedrock:** integration is implemented; the existing default AWS credential check returned `InvalidClientTokenId`. Live AWS model invocation remains unverified. The SDK was tested with a real local model instead.
 - **Physical devices:** install on signed iPhones and other laptops, measure Wi-Fi transfer costs, test sleep/background/thermal behavior, and repeat failover. The iOS Simulator UI and notification permission/banner checks passed through ordinary Xcode Run; these do not measure physical-phone power or network behavior.
 - **Payments:** a transactionally tested sandbox ledger is implemented; no cash collection, payouts, or Flex API integration.
