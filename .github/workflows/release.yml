@@ -1,0 +1,147 @@
+# Builds the Mac app (with its bundled image worker) and the Android app.
+# - Push a tag like v0.2.0: builds both and creates a *draft* GitHub release to review and publish.
+# - Run manually (Actions → Release → Run workflow), or change this file in a pull request:
+#   builds both and keeps them as workflow artifacts; nothing is published.
+# See docs/releasing.md for signing secrets and the default grid address.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+  pull_request:
+    paths: ['.github/workflows/release.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Optional repository variable: the grid address new installs suggest (an https:// URL).
+  VITE_DEFAULT_COORDINATOR: ${{ vars.GIPU_DEFAULT_GRID }}
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then version="${GITHUB_REF_NAME#v}"; else version="0.1.0"; fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Tags must look like v1.2.3"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  android:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Android SDK, NDK and Rust target
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.1.12297006" "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.1.12297006" >> "$GITHUB_ENV"
+          rustup target add aarch64-linux-android
+      - run: npm ci
+        working-directory: apps/web
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" ]]; then
+            echo "::warning::No Android signing secrets; publishing a debug-signed APK instead. See docs/releasing.md."
+            echo "ANDROID_BUILD=debug" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/release.jks" "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" \
+            > apps/web/src-tauri/gen/android/keystore.properties
+          echo "ANDROID_BUILD=release" >> "$GITHUB_ENV"
+      - name: Build APK
+        working-directory: apps/web
+        run: |
+          flag=""; [[ "$ANDROID_BUILD" == debug ]] && flag="--debug"
+          npx tauri android build $flag --target aarch64 --apk --config "{\"version\":\"$VERSION\"}"
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -n 1)
+          suffix=""; [[ "$ANDROID_BUILD" == debug ]] && suffix="-debug"
+          mkdir -p "$RUNNER_TEMP/out"
+          cp "$apk" "$RUNNER_TEMP/out/GiPU-$VERSION-android-arm64$suffix.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: ${{ runner.temp }}/out/*.apk
+          if-no-files-found: error
+
+  macos:
+    needs: version
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet "uv==0.11.*"
+      - run: npm ci
+        working-directory: apps/web
+      - name: Build the app with the bundled worker
+        run: ./scripts/build-desktop-app.sh --config "{\"version\":\"$VERSION\"}"
+      - name: Package DMG
+        run: |
+          app=apps/web/src-tauri/target/release/bundle/macos/GiPU.app
+          stage="$RUNNER_TEMP/dmg"; mkdir -p "$stage" "$RUNNER_TEMP/out"
+          # ditto keeps the symlinks the build script restored inside the bundled worker.
+          ditto "$app" "$stage/GiPU.app"
+          ln -s /Applications "$stage/Applications"
+          hdiutil create -volname GiPU -srcfolder "$stage" -ov -format UDZO "$RUNNER_TEMP/out/GiPU-$VERSION-macos-arm64.dmg"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: ${{ runner.temp }}/out/*.dmg
+          if-no-files-found: error
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [version, android, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd out && sha256sum * > SHA256SUMS.txt
+          gh release create "$GITHUB_REF_NAME" * --repo "$GITHUB_REPOSITORY" --draft --generate-notes \
+            --title "GiPU ${GITHUB_REF_NAME}"
