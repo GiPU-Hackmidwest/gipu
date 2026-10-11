@@ -107,8 +107,8 @@ final class GridModel: ObservableObject {
                 stopLocalWork(); stage = "Session ended"
             }
             for event in state.events {
-                if didLoadEvents && !seenEvents.contains(event.id) && ["task_started", "credits_earned", "job_completed"].contains(event.kind) {
-                    if event.device_id == nil || event.device_id == deviceID { await notify(event) }
+                if didLoadEvents && !seenEvents.contains(event.id) && event.shouldNotify(userID: state.user.id, deviceID: deviceID) {
+                    await notify(event)
                 }
                 seenEvents.insert(event.id)
             }

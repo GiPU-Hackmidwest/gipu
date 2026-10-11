@@ -20,7 +20,7 @@ The 4.06 seconds is one generation-only smoke measurement. It excludes cold mode
 - Python worker tests: 33 passed, covering existing cancellation/token isolation plus owner/server identity checks, paused registration, failed registration and readiness ordering.
 - Native Rust tests: 11 passed. One intentionally ignored subprocess fixture is invoked by the passing lifecycle tests. Checks include fixed process arguments, environment-only credentials, bounded output, private identities, duplicate-launch prevention, startup timeout, stop/reap and retry.
 - TypeScript command-queue tests: three passed, including a delayed cleanup Pause blocking a later Connect.
-- Existing job-status tests: seven passed.
+- Existing job-status tests: seven passed. Notification ownership tests: three passed. All thirteen web checks passed together after integration with current main.
 - TypeScript/Vite production build and Tauri debug application build: passed.
 - An independent agent reviewed the final frontend/native/Python integration and found no release-blocking issue.
 

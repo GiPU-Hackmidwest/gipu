@@ -40,6 +40,7 @@ This is a prepared-checkout prototype, not a bundled worker installer. The app p
 - Closing, hiding, or leaving this window stops its canvas worker and requests server-side lease revocation. Sessions also expire server-side.
 - The canvas worker can only read a supplied image, apply the agreed 4-pixel RGB(36,203,166) border, and submit PNG output. No arbitrary code from jobs executes.
 - Browser notifications may require HTTPS and platform support. The activity list works without notification permission. The Mac app uses native notifications after explicit opt-in.
+- Earnings notifications require the event's recipient to match the signed-in user. Payments to other contributors still appear in job activity and receipts, without a personal earnings alert.
 - Submitting again after an ambiguous network failure reuses the request ID for an unchanged form. A successful submission clears the ID so a later intentional request is a new job.
 - The model generates a whole image on one laptop. Multiple variants may run on different laptops; exports can run on other devices. Retried generation starts again, not from a transferred checkpoint.
 
@@ -47,6 +48,7 @@ This is a prepared-checkout prototype, not a bundled worker installer. The app p
 
 ```sh
 npm run build
+node --experimental-strip-types --test tests/eventNotifications.test.mjs
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
