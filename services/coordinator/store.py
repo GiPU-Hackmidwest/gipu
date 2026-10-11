@@ -34,6 +34,13 @@ def fail(status: int, detail: str):
     raise HTTPException(status_code=status, detail=detail)
 
 
+# A planning claim outlives the agent's 90-second invocation deadline. An expired
+# claim means its process stopped; another planner may then take the request.
+PLANNING_CLAIM_SECONDS = 150
+PLANNING_ATTEMPTS = 3
+ACTIVE = ('planning', 'queued', 'running')
+
+
 class Store:
     def __init__(self, root: str | Path, lease_seconds=15, clock=time.time):
         self.root = Path(root)
@@ -293,6 +300,9 @@ class Store:
                     continue
                 if mode and plan.get('mode')!=f'strands-{mode}':
                     continue
+                # A request that never left planning has no execution to review.
+                if plan.get('planning',{}).get('status','done')!='done':
+                    continue
                 event = db.execute("SELECT * FROM events WHERE job_id=? AND kind IN ('task_reassigned','job_completed','job_failed','job_cancelled') ORDER BY id DESC LIMIT 1",(row['id'],)).fetchone()
                 if not event:
                     continue
@@ -332,6 +342,23 @@ class Store:
                        'Strands review unavailable; deterministic recovery remains active' if error else 'Strands checked execution results and routing',job_id=job_id)
             return True
 
+    def reserve_job(self, db, user_id, request, status, plan):
+        """Insert a job and reserve its full budget; caller has checked idempotency."""
+        minimum = request['count'] * 7 + 1
+        if request['budget'] < minimum:
+            fail(422, f'Budget must cover the fixed quote of {minimum} sandbox credits')
+        active = db.execute(f"SELECT COUNT(*) FROM jobs WHERE owner_id=? AND status IN {ACTIVE}", (user_id,)).fetchone()[0]
+        if active >= 10:
+            fail(409, 'Finish or cancel an existing job first')
+        if db.execute('UPDATE users SET balance=balance-? WHERE id=? AND balance>=?', (request['budget'], user_id, request['budget'])).rowcount != 1:
+            fail(402, 'Insufficient sandbox balance')
+        job_id = uid()
+        db.execute('''INSERT INTO jobs(id,owner_id,request_id,prompt,status,count,width,height,steps,budget,created_at,plan)
+                      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)''',
+                   (job_id, user_id, request['request_id'], request['prompt'], status, request['count'], request['width'], request['height'], request['steps'], request['budget'], self.clock(), json.dumps(plan)))
+        self.ledger(db, user_id, job_id, 'reserve', -request['budget'], 'Reserved for device computation')
+        return job_id
+
     def create_job(self, user_id, request, plan):
         with self.tx() as db:
             self.sweep(db)
@@ -342,24 +369,97 @@ class Store:
             if plan.get('mode','').startswith('strands-'):
                 plan['routes'] = self.validate_routes(db,request,plan.get('routes',{}))
                 plan['routing_until'] = self.clock()+45
-            minimum = request['count'] * 7 + 1
-            if request['budget'] < minimum:
-                fail(422, f'Budget must cover the fixed quote of {minimum} sandbox credits')
-            active = db.execute("SELECT COUNT(*) FROM jobs WHERE owner_id=? AND status IN ('queued','running')", (user_id,)).fetchone()[0]
-            if active >= 10:
-                fail(409, 'Finish or cancel an existing job first')
-            if db.execute('UPDATE users SET balance=balance-? WHERE id=? AND balance>=?', (request['budget'], user_id, request['budget'])).rowcount != 1:
-                fail(402, 'Insufficient sandbox balance')
-            job_id = uid()
-            db.execute('''INSERT INTO jobs(id,owner_id,request_id,prompt,status,count,width,height,steps,budget,created_at,plan)
-                          VALUES(?,?,?,?,'queued',?,?,?,?,?,?,?)''',
-                       (job_id, user_id, request['request_id'], request['prompt'], request['count'], request['width'], request['height'], request['steps'], request['budget'], self.clock(), json.dumps(plan)))
+            job_id = self.reserve_job(db, user_id, request, 'queued', plan)
             job = dict(db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone())
             for variant in range(request['count']):
                 self.new_task(db, job, variant)
-            self.ledger(db, user_id, job_id, 'reserve', -request['budget'], 'Reserved for device computation')
             self.event(db, 'job_created', f'{request["count"]} image(s) queued; {request["budget"]} credits reserved', job_id=job_id)
             return self.job(db, job_id)
+
+    def create_planning_job(self, user_id, request, mode):
+        """Persist and reserve before any model call so retries and restarts find it."""
+        with self.tx() as db:
+            self.sweep(db)
+            previous = db.execute('SELECT id FROM jobs WHERE owner_id=? AND request_id=?', (user_id, request['request_id'])).fetchone()
+            if previous:
+                return self.job(db, previous['id'])
+            plan = {'mode': f'strands-{mode}', 'explanation': 'Strands is planning device selection.',
+                    'planning': {'status': 'pending', 'attempts': 0}}
+            job_id = self.reserve_job(db, user_id, request, 'planning', plan)
+            self.event(db, 'job_planning', f'{request["count"]} image(s) accepted for planning; {request["budget"]} credits reserved', job_id=job_id)
+            return self.job(db, job_id)
+
+    @staticmethod
+    def planning_claim_live(planning, claim_id, now):
+        return (planning.get('claim_id') == claim_id and planning.get('status') == 'running'
+                and planning.get('started_at', 0) + PLANNING_CLAIM_SECONDS > now)
+
+    def claim_planning(self):
+        """Durably lease the oldest unplanned request before calling a provider."""
+        with self.tx() as db:
+            self.sweep(db)
+            for row in db.execute("SELECT * FROM jobs WHERE status='planning' ORDER BY created_at").fetchall():
+                plan = json.loads(row['plan'])
+                planning = plan.setdefault('planning', {'status': 'pending', 'attempts': 0})
+                if planning.get('status') == 'running' and planning.get('started_at', 0) + PLANNING_CLAIM_SECONDS > self.clock():
+                    continue
+                if planning.get('attempts', 0) >= PLANNING_ATTEMPTS:
+                    planning.update(status='failed', finished_at=self.clock())
+                    db.execute('UPDATE jobs SET plan=? WHERE id=?', (json.dumps(plan), row['id']))
+                    self.finish_unsuccessful(db, row['id'], 'failed', 'Planning did not finish; reserved credits returned')
+                    continue
+                planning.update(claim_id=uid(), status='running', started_at=self.clock(),
+                                attempts=planning.get('attempts', 0) + 1)
+                db.execute('UPDATE jobs SET plan=? WHERE id=?', (json.dumps(plan), row['id']))
+                return self.job(db, row['id'])
+            return None
+
+    def activate_job(self, job_id, claim_id, routes, explanation, tools):
+        """Turn a planned request into queued work, only under its live planning claim."""
+        with self.tx() as db:
+            self.sweep(db)
+            row = db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone()
+            if not row:
+                fail(404, 'Job not found')
+            if row['status'] != 'planning':
+                fail(409, f'Request is {row["status"]}; it can no longer be submitted')
+            plan = json.loads(row['plan'])
+            if not self.planning_claim_live(plan.get('planning', {}), claim_id, self.clock()):
+                fail(409, 'Planning claim expired or replaced; this plan is stale')
+            plan.update(explanation=str(explanation)[:1200], tools=tools,
+                        routes=self.validate_routes(db, row, routes), routing_until=self.clock()+45)
+            plan['planning'].update(status='done', finished_at=self.clock())
+            db.execute("UPDATE jobs SET status='queued',plan=? WHERE id=?", (json.dumps(plan), job_id))
+            job = dict(db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone())
+            for variant in range(job['count']):
+                self.new_task(db, job, variant)
+            self.event(db, 'job_created', f'Strands planned {job["count"]} image(s); work queued', job_id=job_id)
+            return self.job(db, job_id)
+
+    def finish_planning(self, job_id, claim_id, tools, error=None):
+        """Record the planner trace; fail and refund a request the planner never submitted."""
+        with self.tx() as db:
+            row = db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone()
+            if not row:
+                return False
+            plan = json.loads(row['plan'])
+            planning = plan.get('planning', {})
+            if planning.get('claim_id') != claim_id:
+                return False
+            if row['status'] == 'planning' and not self.planning_claim_live(planning, claim_id, self.clock()):
+                return False  # Another planner may now own this request.
+            plan['tools'] = tools
+            if error:
+                plan['dispatch_error'] = str(error)[:200]
+            if row['status'] == 'planning':
+                planning.update(status='failed', finished_at=self.clock())
+            elif planning.get('status') == 'running':
+                planning.update(status=row['status'], finished_at=self.clock())  # Cancelled meanwhile.
+            db.execute('UPDATE jobs SET plan=? WHERE id=?', (json.dumps(plan), job_id))
+            if row['status'] == 'planning':
+                self.finish_unsuccessful(db, job_id, 'failed',
+                                         f'Strands could not schedule ({str(error or "no submission")[:120]}); reserved credits returned')
+            return True
 
     def task(self, db, row):
         task = dict(row)

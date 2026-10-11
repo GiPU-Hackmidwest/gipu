@@ -87,17 +87,20 @@ def create_app(data_dir=None):
             while True:
                 await asyncio.to_thread(store.tick)
                 await asyncio.sleep(1)
-        async def review():
+        async def background(name, step, pause):
             while True:
                 try:
-                    await asyncio.to_thread(agent.review_once,store)
+                    # A slow provider call blocks only this loop, never lease expiry.
+                    await asyncio.to_thread(step,store)
                 except Exception:
-                    # Claims are durable and expire; an unexpected review failure
+                    # Claims are durable and expire; an unexpected agent failure
                     # must never stop lease expiry or accepted-work settlement.
                     import logging
-                    logging.getLogger('pocketgrid').exception('Background agent review failed')
-                await asyncio.sleep(2)
-        tasks = [asyncio.create_task(expire()),asyncio.create_task(review())]
+                    logging.getLogger('pocketgrid').exception('Background agent %s failed', name)
+                await asyncio.sleep(pause)
+        tasks = [asyncio.create_task(expire()),
+                 asyncio.create_task(background('planning', agent.plan_once, 1)),
+                 asyncio.create_task(background('review', agent.review_once, 2))]
         yield
         for task in tasks:
             task.cancel()
