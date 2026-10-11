@@ -1,8 +1,8 @@
 import SwiftUI
 
 private enum GridStyle {
-    static let orange = Color(red: 1, green: 0.353, blue: 0.035)
-    static let actionInk = Color(red: 0.153, green: 0.078, blue: 0.020)
+    static let orange = Color(red: 195.0 / 255, green: 68.0 / 255, blue: 0)
+    static let actionInk = Color.white
     static let background = adaptive(0xF4F6F8, dark: 0x1C1E21)
     static let panel = adaptive(0xF5F6F8, dark: 0x282C31)
     static let inset = adaptive(0xE5E7EB, dark: 0x171A1E)
@@ -46,7 +46,7 @@ private struct GridPrimaryButton: ButtonStyle {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.headline).foregroundStyle(GridStyle.actionInk)
+        configuration.label.font(.headline).foregroundStyle(GridStyle.actionInk).tint(GridStyle.actionInk)
             .frame(maxWidth: .infinity, minHeight: 48)
             .padding(.horizontal, 16).padding(.vertical, 5)
             .background {
@@ -177,7 +177,7 @@ struct ContentView: View {
         }
         .foregroundStyle(GridStyle.ink)
         .tint(GridStyle.ink)
-        .alert("PocketGrid", isPresented: Binding(get: { grid.error != nil }, set: { if !$0 { grid.error = nil } })) {
+        .alert("GiPU", isPresented: Binding(get: { grid.error != nil }, set: { if !$0 { grid.error = nil } })) {
             Button("OK") { grid.error = nil }
         } message: { Text(grid.error ?? "") }
     }
@@ -206,12 +206,9 @@ private struct JoinView: View {
                         }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.name.trimmingCharacters(in: .whitespaces).isEmpty)
                         Text("Sharing starts only when you choose.").font(.caption).foregroundStyle(GridStyle.muted)
                     }.gridPanel()
-                    DisclosureGroup("About this grid") {
-                        Text("Grid members can see prompts and images. Use public demo material. Credits have no cash value.").font(.footnote).padding(.top, 8)
-                    }.font(.subheadline).padding(.horizontal, 12)
                 }.padding(24).frame(maxWidth: 580)
                     .frame(maxWidth: .infinity)
-            }.background(GridStyle.background).navigationTitle("PocketGrid").navigationBarTitleDisplayMode(.inline)
+            }.background(GridStyle.background).navigationTitle("GiPU").navigationBarTitleDisplayMode(.inline)
         }
     }
 }
@@ -240,7 +237,8 @@ private struct CreateView: View {
     @State private var prompt = "A cat riding a tiny bicycle, playful illustration"
     @State private var count = 1
     @State private var budget = 10
-    @State private var useAgent = false
+    @AppStorage("gipu.developerOptionsEnabled") private var developerOptionsEnabled = false
+    @AppStorage("gipu.usePlanner") private var useAgent = false
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -259,11 +257,9 @@ private struct CreateView: View {
                                 Stepper("Images: \(count)", value: $count, in: 1...4)
                                     .onChange(of: count) { _, value in budget = max(budget, value * 7 + 1) }
                                 Stepper("Budget: \(budget)", value: $budget, in: (count * 7 + 1)...100)
-                                Toggle("Smart device selection", isOn: $useAgent).disabled(grid.snapshot?.agent.available != true)
-                                Text(grid.snapshot?.agent.available == true ? "A planner chooses suitable devices." : "Smart selection is unavailable. Devices can still accept requests.").font(.caption).foregroundStyle(GridStyle.muted)
                             }.padding(.top, 18)
                         }.font(.subheadline)
-                        Button { Task { await grid.submit(prompt: prompt, count: count, budget: budget, useAgent: useAgent) } } label: {
+                        Button { Task { await grid.submit(prompt: prompt, count: count, budget: budget, useAgent: developerOptionsEnabled && useAgent) } } label: {
                             HStack { Text(grid.submitting ? "Creating…" : "Create image"); if grid.submitting { ProgressView() } }
                         }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.submitting || grid.snapshot == nil || budget > (grid.snapshot?.balance ?? 0) || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
                         Text("Reserves \(budget) credits. Unused credits return.").font(.caption).foregroundStyle(GridStyle.muted)
@@ -286,16 +282,6 @@ private struct JobCard: View {
             Text(job.statusLabel).font(.caption.weight(.medium)).foregroundStyle(GridStyle.muted)
             JobProgressView(job: job)
             ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant) }
-            if !job.tasks.isEmpty {
-                DisclosureGroup("Devices") {
-                    ForEach(job.tasks) { task in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("\(task.kind == "image_generate" ? "Create" : "Finish") · image \(task.variant + 1)")
-                            Text("\(task.device_id.flatMap { id in grid.snapshot?.devices.first { $0.id == id }?.name } ?? "Awaiting device") · \(task.status)").font(.caption).foregroundStyle(GridStyle.muted)
-                        }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
-                    }
-                }.font(.subheadline)
-            }
             if let receipt = job.receipt {
                 DisclosureGroup("Receipt · \(receipt.total_charged) credits") {
                     VStack(spacing: 10) {
@@ -376,7 +362,7 @@ private struct ProtectedImage: View {
             if let image {
                 Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 340)
                     .clipShape(RoundedRectangle(cornerRadius: 24)).accessibilityLabel("Image \(variant + 1), \(stageLabel)")
-                ShareLink(item: Image(uiImage: image), preview: SharePreview("PocketGrid · image \(variant + 1)", image: Image(uiImage: image))) {
+                ShareLink(item: Image(uiImage: image), preview: SharePreview("GiPU · image \(variant + 1)", image: Image(uiImage: image))) {
                     Label(stage == "image_finalize" ? "Share image" : "Share preview", systemImage: "square.and.arrow.up")
                 }.buttonStyle(.bordered).controlSize(.large)
             } else if failed { Label("Image unavailable", systemImage: "photo.badge.exclamationmark") }
@@ -448,27 +434,23 @@ private struct ContributeView: View {
                         } else if grid.sharing {
                             Text("Ready to help").font(.subheadline).foregroundStyle(GridStyle.muted)
                         }
-                        if grid.sharing {
-                            Button { Task { await grid.pause() } } label: { Label("Pause sharing", systemImage: "pause.fill") }.buttonStyle(GridPrimaryButton())
-                        } else {
-                            Button { Task { await grid.start() } } label: { Label(grid.contributionTransition ? "Connecting…" : "Start sharing", systemImage: "play.fill") }.buttonStyle(GridPrimaryButton()).disabled(grid.busy || grid.contributionTransition)
-                        }
+                        Toggle(isOn: Binding(get: { grid.sharing }, set: { enabled in
+                            Task {
+                                if enabled { await grid.start() }
+                                else { await grid.pause() }
+                            }
+                        })) {
+                            HStack {
+                                Text("Finish images").font(.headline)
+                                if grid.contributionTransition { ProgressView().controlSize(.small) }
+                            }
+                        }.tint(GridStyle.orange)
+                            .disabled(!grid.sharing && (grid.busy || grid.contributionTransition))
+                            .accessibilityHint("Turn on to start sharing. Turn off to pause.")
                         Text("Leaving the app pauses sharing.").font(.caption).foregroundStyle(GridStyle.muted)
-                        DisclosureGroup("Limits") {
-                            VStack(spacing: 18) {
-                                Picker("Maximum image", selection: $grid.limits.max_pixels) {
-                                    Text("256 × 256").tag(65536)
-                                    Text("384 × 384").tag(147456)
-                                    Text("512 × 512").tag(262144)
-                                }
-                                Stepper("Session: \(grid.limits.session_minutes) min", value: $grid.limits.session_minutes, in: 5...120, step: 5)
-                                Text(grid.sharing ? "Pause to change limits." : "One image at a time. Limits control image size and time, not memory or GPU usage.").font(.caption).foregroundStyle(GridStyle.muted)
-                            }.padding(.top, 14).disabled(grid.sharing || grid.contributionTransition)
-                        }.font(.subheadline)
+                        Stepper("Stop after \(grid.limits.session_minutes) min", value: $grid.limits.session_minutes, in: 5...120, step: 5)
+                            .font(.subheadline).disabled(grid.sharing || grid.contributionTransition)
                     }.gridPanel()
-                    DisclosureGroup("How sharing works") {
-                        Text("Your phone adds a frame to images made by laptops. Earn sandbox credits when finished work is accepted.").font(.footnote).padding(.top, 8)
-                    }.font(.subheadline).padding(.horizontal, 12)
                 }.padding(24).frame(maxWidth: 580).frame(maxWidth: .infinity)
             }.background(GridStyle.background).navigationTitle("Contribute").navigationBarTitleDisplayMode(.inline)
         }
@@ -486,20 +468,10 @@ private struct ActivityView: View {
                 Section {
                     Text(grid.snapshot?.user.name ?? "Connecting")
                     Button { Task { await grid.enableNotifications() } } label: { LabeledContent("Notifications", value: grid.notificationStatus) }
-                    DisclosureGroup("Grid details") {
-                        Text(URL(string: grid.server)?.host ?? grid.server).font(.caption)
-                        Text("Alerts arrive while the app receives updates.").font(.caption).foregroundStyle(GridStyle.muted)
-                    }
-                }
-                Section("Devices") {
-                    ForEach(grid.snapshot?.devices ?? []) { device in
-                        HStack(spacing: 14) {
-                            Image(systemName: device.capabilities?.contains("image_generate") == true ? "laptopcomputer" : "iphone").frame(width: 32).accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(device.name)
-                                Text(sharingStatus(device)).font(.caption).foregroundStyle(GridStyle.muted)
-                            }
-                        }.padding(.vertical, 6)
+                    NavigationLink {
+                        DeveloperOptionsView()
+                    } label: {
+                        Label("Developer options", systemImage: "slider.horizontal.3")
                     }
                 }
                 Section("Activity") {
@@ -516,6 +488,80 @@ private struct ActivityView: View {
                 .scrollContentBackground(.hidden).background(GridStyle.background).refreshable { await grid.refresh() }
         }
     }
+}
+
+private struct DeveloperOptionsView: View {
+    @EnvironmentObject private var grid: GridModel
+    @AppStorage("gipu.developerOptionsEnabled") private var enabled = false
+    @AppStorage("gipu.usePlanner") private var useAgent = false
+
+    var body: some View {
+        Form {
+            Section {
+                Toggle("Developer options", isOn: $enabled).tint(GridStyle.orange)
+            } footer: {
+                Text("Saved on this device. Turning this on does not start sharing.")
+            }
+            if enabled {
+                Section {
+                    LabeledContent("CPU threads", value: "1")
+                    Picker("Maximum image", selection: $grid.limits.max_pixels) {
+                        Text("256 × 256").tag(65536)
+                        Text("384 × 384").tag(147456)
+                        Text("512 × 512").tag(262144)
+                    }.disabled(grid.sharing || grid.contributionTransition)
+                } header: { Text("Image finishing") } footer: {
+                    Text(grid.sharing ? "Pause finishing to change limits." : "One image at a time. Image limits are not memory or GPU caps.")
+                }
+                Section("Device status") {
+                    LabeledContent("Stage", value: grid.stage)
+                    LabeledContent("Backend", value: grid.ownDevice?.telemetry?.backend ?? "—")
+                    if grid.active != nil {
+                        LabeledContent("Task progress", value: grid.progress.formatted(.percent.precision(.fractionLength(0))))
+                    }
+                    Text("This phone finishes laptop images. It does not generate them.").font(.footnote).foregroundStyle(GridStyle.muted)
+                }
+                Section {
+                    Toggle("Smart device selection", isOn: $useAgent)
+                        .tint(GridStyle.orange).disabled(!useAgent && grid.snapshot?.agent.available != true)
+                    LabeledContent("Planner", value: grid.snapshot?.agent.mode ?? "—")
+                } header: { Text("Requests") } footer: {
+                    Text("Applies to new requests while Developer options is on.")
+                }
+                Section("Device details") {
+                    ForEach(grid.snapshot?.devices ?? []) { device in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(device.name)
+                            Text(sharingStatus(device)).font(.caption).foregroundStyle(GridStyle.muted)
+                            Text(device.capabilities?.joined(separator: ", ") ?? "Capabilities unavailable")
+                                .font(.caption).foregroundStyle(GridStyle.muted)
+                        }.padding(.vertical, 4)
+                    }
+                }
+                Section("Request details") {
+                    ForEach(grid.ownJobs) { job in
+                        DisclosureGroup(job.prompt) {
+                            if let planning = job.plan?.planning?.status {
+                                LabeledContent("Planning", value: planning).font(.subheadline)
+                            }
+                            ForEach(job.tasks) { task in
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(task.kind == "image_generate" ? "Create" : "Finish") · image \(task.variant + 1)")
+                                    Text("\(task.device_id.flatMap { id in grid.snapshot?.devices.first { $0.id == id }?.name } ?? "Awaiting device") · \(task.status)")
+                                        .font(.caption).foregroundStyle(GridStyle.muted)
+                                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+                            }
+                        }
+                    }
+                }
+                Section("Grid") {
+                    Text(grid.server).font(.footnote).textSelection(.enabled)
+                }
+            }
+        }.navigationTitle("Developer options").navigationBarTitleDisplayMode(.inline)
+            .scrollContentBackground(.hidden).background(GridStyle.background)
+    }
+
     private func sharingStatus(_ device: Device) -> String {
         guard device.online else { return "Offline" }
         guard device.enabled else { return "Connected · paused" }
