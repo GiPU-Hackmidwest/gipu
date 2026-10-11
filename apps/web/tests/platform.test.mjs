@@ -4,12 +4,12 @@ import { platformFlags } from '../src/platform.ts';
 
 test('Android uses native plugins but never exposes a desktop worker', () => {
   for (const platform of ['android', 'androideabi']) {
-    assert.deepEqual(platformFlags(true, platform, 'Macintosh'), { isTauri: true, isMobileApp: true, isDesktop: false, isMacDesktop: false });
+    assert.deepEqual(platformFlags(true, platform, 'Macintosh'), { isAndroidApp: true, isTauri: true, isMobileApp: true, isDesktop: false, isMacDesktop: false });
   }
 });
 test('Mac metadata exposes the worker even if the webview changes its user agent', () => {
   for (const platform of ['darwin', 'macos']) {
-    assert.deepEqual(platformFlags(true, platform, ''), { isTauri: true, isMobileApp: false, isDesktop: true, isMacDesktop: true });
+    assert.deepEqual(platformFlags(true, platform, ''), { isAndroidApp: false, isTauri: true, isMobileApp: false, isDesktop: true, isMacDesktop: true });
   }
 });
 test('browser and other desktop targets never expose Mac commands', () => {
@@ -25,5 +25,13 @@ test('development fallback separates native phone webviews from Mac webviews', (
 });
 
 test('iOS metadata remains mobile even with a desktop-style user agent', () => {
-  assert.deepEqual(platformFlags(true, 'ios', 'Macintosh'), { isTauri: true, isMobileApp: true, isDesktop: false, isMacDesktop: false });
+  assert.deepEqual(platformFlags(true, 'ios', 'Macintosh'), { isAndroidApp: false, isTauri: true, isMobileApp: true, isDesktop: false, isMacDesktop: false });
+});
+
+test('Android adapters require Android native runtime and honor authoritative metadata', () => {
+  assert.equal(platformFlags(false, undefined, 'Android').isAndroidApp, false);
+  assert.equal(platformFlags(true, undefined, 'Android').isAndroidApp, true);
+  assert.equal(platformFlags(true, 'ios', 'Android').isAndroidApp, false);
+  assert.equal(platformFlags(true, 'darwin', 'Android').isAndroidApp, false);
+  assert.equal(platformFlags(true, undefined, 'iPhone').isAndroidApp, false);
 });

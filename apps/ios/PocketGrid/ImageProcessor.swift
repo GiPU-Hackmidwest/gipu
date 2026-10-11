@@ -6,6 +6,21 @@ import UniformTypeIdentifiers
 enum ImageProcessor {
     enum Failure: Error { case invalidImage, tooLarge, encodingFailed }
 
+    /// V1 path, tested but not selected by GridModel until deployment is confirmed.
+    /// Re-encode the decoded image without drawing or color-space conversion.
+    static func finalizeInvisible(_ data: Data, maxPixels: Int) throws -> Data {
+        try Task.checkCancellation()
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { throw Failure.invalidImage }
+        guard image.width >= 8, image.height >= 8, image.width * image.height <= maxPixels else { throw Failure.tooLarge }
+        let output = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(output, UTType.png.identifier as CFString, 1, nil) else { throw Failure.encodingFailed }
+        CGImageDestinationAddImageFromSource(destination, source, 0, nil)
+        try Task.checkCancellation()
+        guard CGImageDestinationFinalize(destination) else { throw Failure.encodingFailed }
+        return output as Data
+    }
+
     /// Actual local pixel work. Exactly four inner pixels on each edge are teal.
     /// This worker uses one CPU thread; it does not run a diffusion model.
     static func finalize(_ data: Data, maxPixels: Int) throws -> Data {

@@ -1,14 +1,17 @@
 import { platformFlags } from './platform';
 
-export const { isTauri, isMobileApp, isDesktop, isMacDesktop } = platformFlags(
+export const { isAndroidApp, isTauri, isMobileApp, isDesktop, isMacDesktop } = platformFlags(
   '__TAURI_INTERNALS__' in window, import.meta.env.TAURI_ENV_PLATFORM, navigator.userAgent,
 );
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number) { super(message); this.name = 'ApiError'; }
+}
 export class Api {
   constructor(readonly server: string, readonly token: string) {}
   url(path: string) { return `${this.server.replace(/\/$/, '')}${path.startsWith('/api/') ? path : `/api${path}`}`; }
   async request<T>(path: string, body?: unknown, method?: string, signal?: AbortSignal, keepalive = false): Promise<T> {
     const response = await fetch(this.url(path), { method: method ?? (body === undefined ? 'GET' : 'POST'), headers: { ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) }, body: body === undefined ? undefined : JSON.stringify(body), signal, keepalive });
-    if (!response.ok) { const error = await response.json().catch(() => null); throw new Error(typeof error?.detail === 'string' ? error.detail : `Request failed (${response.status})`); }
+    if (!response.ok) { const error = await response.json().catch(() => null); throw new ApiError(typeof error?.detail === 'string' ? error.detail : `Request failed (${response.status})`, response.status); }
     return response.json();
   }
   async image(path: string, signal?: AbortSignal) {
@@ -23,8 +26,8 @@ export async function askNotifications(): Promise<boolean> {
   return 'Notification' in window && await Notification.requestPermission() === 'granted';
 }
 export async function notify(message: string) {
-  if (isTauri) { const api = await import('@tauri-apps/plugin-notification'); if (await api.isPermissionGranted()) api.sendNotification({ title: 'PocketGrid', body: message }); }
-  else if ('Notification' in window && Notification.permission === 'granted') new Notification('PocketGrid', { body: message });
+  if (isTauri) { const api = await import('@tauri-apps/plugin-notification'); if (await api.isPermissionGranted()) api.sendNotification({ title: 'GiPU', body: message }); }
+  else if ('Notification' in window && Notification.permission === 'granted') new Notification('GiPU', { body: message });
 }
 
 export async function copyText(text: string) {

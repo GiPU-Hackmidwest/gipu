@@ -12,7 +12,7 @@ import type { Device, Limits, Session, Snapshot } from './types';
 const idle: WorkerStatus = { phase: 'stopped', message: 'Image worker disconnected.' };
 const megabytes = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
 
-export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChange, developerTarget }: { session: Session; api: Api; devices: Device[]; now: number; onDeviceIdChange: (id: string | null) => void; developerTarget: HTMLElement | null }) {
+export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChange, developerTarget, onStopReady }: { session: Session; api: Api; devices: Device[]; now: number; onDeviceIdChange: (id: string | null) => void; developerTarget: HTMLElement | null; onStopReady?: (stop: (() => Promise<void>) | null) => void }) {
   const [projectRoot, setProjectRoot] = useState('');
   const [bundled, setBundled] = useState(false);
   const [model, setModel] = useState<ModelStatus | null>(null);
@@ -203,6 +203,23 @@ export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChang
     } catch (error) { if (mounted.current) setError(errorMessage(error)); }
     finally { if (intentEpoch.current === epoch) { actionPending.current = false; if (mounted.current) setPending(false); } }
   }
+
+  const stopForLeave = useRef<() => Promise<void>>(async () => {});
+  stopForLeave.current = async () => {
+    const epoch = ++intentEpoch.current;
+    const inFlightStart = startOperation.current;
+    actionPending.current = true; setPending(true); setStarting(false);
+    try {
+      await desktopWorker.disconnect(async next => {
+        await inFlightStart?.catch(() => {});
+        await pauseDevice(next.deviceId ?? latest.current.deviceId);
+        if (mounted.current && intentEpoch.current === epoch) { latest.current = next; setStatus(next); }
+      });
+    } finally {
+      if (intentEpoch.current === epoch) { actionPending.current = false; if (mounted.current) setPending(false); }
+    }
+  };
+  useEffect(() => { onStopReady?.(() => stopForLeave.current()); return () => onStopReady?.(null); }, [onStopReady]);
 
   async function connectOnly() {
     if (actionPending.current) return;

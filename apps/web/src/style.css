@@ -183,3 +183,26 @@ button[role='switch']:disabled { opacity: .65; }
 .contribution-toggle-copy p { margin-top: 8px; font-size: .88rem; }
 .download-confirmation, .model-download { border-radius: 22px; background: var(--canvas); padding: 20px; box-shadow: var(--clay-inset); }
 @media (max-width: 360px) { .contribution-toggle h2 { font-size: 1.1rem; } }
+
+/* Account controls share the same quiet surfaces as contribution. */
+.account-layout { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.account-layout .panel { min-width: 0; }
+.account-qr { align-self: center; padding: 8px; width: fit-content; max-width: 100%; background: #fff; border-radius: 20px; }
+.account-qr svg { display: block; max-width: 100%; height: auto; }
+.link-code { text-align: center; letter-spacing: .16em; font-size: 1.35rem; font-weight: 750; overflow-wrap: anywhere; }
+.grid-address { overflow-wrap: anywhere; font-size: .85rem; color: var(--muted); }
+.qr-camera { display: block; width: 100%; max-height: 320px; object-fit: cover; border-radius: 18px; background: #1c1e21; }
+.account-onboarding { max-width: 540px; }
+.account-onboarding details > form, .account-layout details > form { margin-top: 16px; }
+.account-onboarding .button-row > button[aria-pressed=true] { border-color: var(--accent); }
+.image-verifying > a, .image-verifying > .image-placeholder { display: block; position: relative; overflow: hidden; border-radius: 16px; }
+.image-verifying > a::after, .image-verifying > .image-placeholder::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,.32) 50%, transparent 70%); transform: translateX(-100%); animation: image-shimmer 2.3s ease-in-out infinite; }
+@keyframes image-shimmer { to { transform: translateX(100%); } }
+@media (prefers-reduced-motion: reduce) { .image-verifying > a::after, .image-verifying > .image-placeholder::after { animation: none; transform: none; background: rgba(255,255,255,.08); } }
+@media (max-width: 760px) { .account-layout { grid-template-columns: minmax(0, 1fr); } }
+.signout-status { position: fixed; z-index: 100; bottom: 24px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 99px; color: var(--ink); background: var(--surface); box-shadow: var(--shadow); }
+
+/* Official logo assets keep their own ink and live-orange dot. */
+.brand-logo { display: block; padding: 10px; line-height: 0; flex: 0 0 auto; }
+.brand-logo img { display: block; width: 119px; height: 40px; }
+@media (max-width: 620px) { .brand-logo img { width: 98px; height: 33px; } }

@@ -16,5 +16,7 @@
 <key>UISupportedInterfaceOrientations</key><array><string>UIInterfaceOrientationPortrait</string></array>
 <key>UISupportedInterfaceOrientations~ipad</key><array><string>UIInterfaceOrientationPortrait</string><string>UIInterfaceOrientationPortraitUpsideDown</string><string>UIInterfaceOrientationLandscapeLeft</string><string>UIInterfaceOrientationLandscapeRight</string></array>
 <key>NSLocalNetworkUsageDescription</key><string>GiPU connects to your chosen grid on the local network to request and finish images.</string>
+<key>NSCameraUsageDescription</key><string>Scan a GiPU QR code to sign in or link this phone to your account.</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>com.pocketgrid.prototype.links</string><key>CFBundleURLSchemes</key><array><string>gipu</string></array></dict></array>
 <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoads</key><true/></dict>
 </dict></plist>
