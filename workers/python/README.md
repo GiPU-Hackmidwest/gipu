@@ -39,7 +39,7 @@ The native desktop **Connect** action uses this paused, generation-only, cache-o
 
 Controls are concrete: one active job, an image pixel limit, a timed sharing session, and CPU thread count. The CPU thread limit does **not** promise a GPU percentage, RAM cap, or battery limit. Heartbeats run independently of inference. A pause/revocation cancels at the next denoising callback; the current kernel cannot be interrupted mid-step. Nine seconds without coordinator confirmation also requests cancellation. An abandoned image restarts on another worker rather than resuming a diffusion checkpoint.
 
-Use `--finalize-only` to run the deterministic PNG export workload without downloading a model. It applies the protocol's exact four-pixel teal frame and preserves every interior pixel. Browser and iOS devices can perform this same small workload; this is not diffusion on a phone.
+Use `--finalize-only` to run the deterministic PNG export workload without downloading a model. It returns a lossless PNG whose pixels are identical to the generated image; nothing is drawn on it, and the coordinator checks every pixel. Browser, Android and iOS devices perform this same small workload; this is not diffusion on a phone.
 
 Use `--generate-only` on the laptop when demonstrating handoff to a phone/browser finalizer. Keep separate identity files when changing capabilities. A 512-pixel image with 24 steps is clearer than the fast 256-pixel default; the verified CPU smoke timings on this host were approximately 29 seconds and 3 seconds respectively, excluding model startup. These are measurements from one host, not performance promises.
 

@@ -52,7 +52,7 @@ In both modes the app passes the account token through the child's environment, 
 - Contribution is off after joining and after page reload, and starts only when the owner presses Start.
 - Each browser has a distinct device token. Owner sessions and device tokens are separate. Tokens are stored locally for this prototype, sent only in Authorization headers, never image URLs.
 - Closing, hiding, or leaving this window stops its canvas worker and requests server-side lease revocation. Sessions also expire server-side.
-- The canvas worker can only read a supplied image, apply the agreed 4-pixel RGB(36,203,166) border, and submit PNG output. No arbitrary code from jobs executes.
+- The canvas worker can only read a supplied image and submit it again as a pixel-identical PNG (no border; the coordinator checks every pixel). No arbitrary code from jobs executes.
 - Browser notifications may require HTTPS and platform support. The activity list works without notification permission. The Mac app uses native notifications after explicit opt-in.
 - Earnings notifications require the event's recipient to match the signed-in user. Payments to other contributors still appear in job activity and receipts, without a personal earnings alert.
 - Submitting again after an ambiguous network failure reuses the request ID for an unchanged form. A successful submission clears the ID so a later intentional request is a new job.
