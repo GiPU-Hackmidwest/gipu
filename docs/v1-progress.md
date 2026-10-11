@@ -17,16 +17,16 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
 | C1 | Downloadable, easy app | todo: Mac DMG + Android APK releases | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
-| C2 | QR sign-in, same credit account | review: contract/server merged; review: Android adapters (#24); todo: hosted deploy | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
-| C3 | Private sessions | review: corrected server scoping merged; todo: hosted deploy | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
+| C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
+| C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
-| C6 | Create images / Finish images toggles | todo: verify on Android | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
+| C6 | Create images / Finish images toggles | done: Finish images verified on Android emulator | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
-| C8 | Device counts, no test devices | review: `grid` counts merged; todo: hosted deploy/cleanup if needed | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
+| C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
 | C10 | Rename to GiPU | todo: Tauri productName, Android/release names and remaining docs | done: GiPU in-app name and mark; bundle IDs/env names preserved |
-| C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | review: iOS runtime now uses invisible encoder after confirmed deployment; pixel/strict-settlement checks and simulator build pass; physical phone pending |
+| C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | review: iOS runtime now uses invisible encoder after confirmed deployment; pixel/strict-settlement checks and simulator build pass; physical phone pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
@@ -44,6 +44,54 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 - **Strict coordinator fixture integration:** with `POCKETGRID_ACCEPT_LEGACY_FRAME=0`, submitted those native Swift encoder outputs to the real local `Store.complete` path using a temporary database. All three modes settled, exposed `verified: true`, charged 8/refunded 2, accepted duplicate completion idempotently, and a paused native device received no work. Sources were deterministic fixtures, not a live diffusion run or iPhone execution.
 - **Build:** the isolated branch's native app, including assets, built successfully in host Xcode for iPhone 17 Pro Max simulator at 03:36 local time. No project, bundle ID or signing settings changed. No physical-device build/install, hosted native job, or physical camera test is claimed.
 - **Handoff:** merge with PRs #28/#29; keep coordinator legacy acceptance until older installed clients migrate. Physical-phone QR/finishing and release validation remain open.
+
+### 2026-10-11 · Codex · finisher review (PR #29)
+
+- Reviewed exact-pixel output and unchanged cancellation, privacy and settlement paths. Fresh checks pass: 34 worker, 77 coordinator and 78 frontend tests, TypeScript and production frontend build. No hosted mutation or physical-device test was performed. Compatible deployment evidence is recorded in PR #28 below.
+- Merge resolves progress-log overlap while preserving both workstreams; the coordinator continues accepting older clients. iOS cutover is a separate Codex change.
+
+### 2026-10-11 · Claude · border-free finishing (branch `feat/v1-invisible-finish`)
+
+- **Python finisher** (`workers/python/worker.py`): `finalize_image` now decodes the PNG and re-encodes the same RGB pixels. Nothing is drawn; a non-PNG source is refused. `FRAME`/`ImageDraw` are gone.
+- **Browser and Android finisher** (`apps/web/src/browserWorker.ts`): the teal border drawing is removed. The image is decoded with `colorSpaceConversion: 'none'`, so the canvas copy stays pixel-identical. The telemetry stage now reads "Finishing image".
+- **Coordinator:** unchanged. It still accepts the legacy frame by default, so installed older apps keep settling.
+- **Docs:** the worker README, the web README canvas note, project context and team development now describe identical-pixel finishing.
+- **Verification:**
+  - Worker tests: 34 passed; the frame test was replaced by an identical-pixel test, plus a non-PNG refusal test. Coordinator: 77 passed. Web: 78 passed, plus `tsc -b` and build.
+  - Live run on a local coordinator started with **`POCKETGRID_ACCEPT_LEGACY_FRAME=0`**, so only frameless output could settle. A Python laptop generated each image.
+    - The new Python `--finalize-only` worker finished job 1.
+    - The browser's Finish images switch finished job 2.
+    - The Android debug APK built from this branch finished job 3 on the emulator, after a cold-start invite link and the Finish images switch.
+    - Every job completed with receipt 10 = 7 + 1 + 2. The finished image downloaded as identical to the generated one, and corner pixels were image colours, not RGB(36,203,166).
+  - Not verified: a physical Android phone, and iOS (Codex-owned, below).
+- **C6:** the shared Finish images switch works on Android. Off shows "Paused"; on shows "Sharing" and an end time; the phone then finished real work.
+- **Handoff (Codex):**
+  1. The hosted coordinator (`a34aef0`) accepts frameless output, so the staged invisible iOS encoder can become the runtime finisher.
+  2. Leave `POCKETGRID_ACCEPT_LEGACY_FRAME` on until every installed iOS/Android build is frameless; then Claude removes the legacy path.
+  3. **Stale session:** a client whose token is no longer valid (revoked from another device, or the server's data reset) stays on the dashboard showing "Coordinator: Invalid or missing credential" and "Updates interrupted" instead of returning to sign-in. Suggest treating 401 from `/state` as signed out, after stopping any local worker.
+
+### 2026-10-11 · Codex · Docker brand build review (PR #28)
+
+- **Coordination:** user-requested review covers the narrow Docker asset fix and this status correction. No deployment or server mutation was performed in this review.
+- The web stage now preserves `apps/web` → `brand/` relative imports, and the final stage copies the resulting dist directory. `.dockerignore` includes the brand assets. A scratch copy of tracked web/brand files in the same relative layout passed TypeScript and production Vite build (`--configLoader runner`, existing dependencies); Git whitespace checks passed. The local Docker daemon was unavailable to the sandbox, so this is not a new container-build claim.
+- Confirmed in Git that `a34aef0` is `7963aca` plus only the Dockerfile fix. The hosted observations below are Claude's deployment-time evidence; this reviewer did not repeat signed-in hosted checks or independently verify current host revision. Compatible deployment unblocks a separately reviewed finisher cutover; it does not mean those clients have switched or that a physical-phone journey passed.
+
+### 2026-10-11 · Claude · hosted coordinator redeployed (`a34aef0`, branch `fix/docker-brand-assets`)
+
+- **Blocker found on main.** `docker compose build` failed: `Brand.tsx` imports `../../../brand/gipu-wordmark.svg`, but the Dockerfile's web stage copied only `apps/web`. Fix: the web stage now mirrors the repository layout (`/src/apps/web` plus `/src/brand`). This affects anyone building the server image from main, not only the hosted grid.
+- **Deployed** `a34aef0`, which is main `7963aca` plus that Dockerfile fix, to the Linode host (`DEPLOYED_COMMIT` updated).
+  - Built while the old coordinator kept serving.
+  - Smoke-tested the new image in a throwaway container on server-local port 18787 with temporary data: health, web root, anonymous join, `grid`, link code.
+  - Then stopped the coordinator, backed up the database and images together to `/root/backups/grid-pre-a34aef0-2026-10-11-0821.tgz` (1.5 MB), and started the new image. Downtime was about a minute.
+- **Verification (hosted):**
+  - The coordinator became healthy with no errors in its logs; planner mode is still `akamai`, available.
+  - `POST /api/sessions/link-codes` without auth returns 401 (it was 405 on the old code). HTTP redirects to HTTPS, port 8787 is unreachable from outside, and the site serves the new GiPU sign-in.
+  - Migration: 15 users, 15 active sessions, 0 tokens left on `users`, so existing sign-ins carried over. All 11 jobs and 20 device rows were kept, and 3 devices were online again after the restart.
+  - Not done: a signed-in hosted journey, because the join code was not read into this session, and no physical phone was used.
+- **Now unblocked:**
+  - Frameless finishers (Python, browser, iOS), since the hosted coordinator accepts both formats.
+  - Setting the `GIPU_DEFAULT_GRID` release variable to `https://66-228-53-243.ip.linodeusercontent.com`.
+  - Real-phone QR checks against the hosted grid.
 
 ### 2026-10-11 · Codex · completed integration (`docs/v1-integration-results`)
 

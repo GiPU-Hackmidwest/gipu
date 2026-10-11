@@ -21,7 +21,7 @@ os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import httpx
-from PIL import Image, ImageDraw
+from PIL import Image
 import psutil
 
 MODEL = "segmind/tiny-sd"
@@ -34,9 +34,6 @@ MODEL_PROFILES = {
     "sdxl-turbo": {"model": "stabilityai/sdxl-turbo", "revision": "71153311d3dbb46851df1931d3ca6e939de83304",
                    "steps": 4, "size": 512, "guidance": 0.0, "safetensors": True},
 }
-FRAME = (36, 203, 166)
-
-
 class WorkCancelled(Exception):
     """The owner stopped sharing or the coordinator revoked this lease."""
 
@@ -47,13 +44,13 @@ def check_cancelled(cancel: threading.Event) -> None:
 
 
 def finalize_image(source: bytes, cancel: threading.Event | None = None) -> bytes:
+    """Re-encode the generated image losslessly; the coordinator checks every pixel matches."""
     cancel = cancel or threading.Event()
     check_cancelled(cancel)
     with Image.open(io.BytesIO(source)) as original:
+        if original.format != "PNG":
+            raise ValueError("Source must be a PNG image")
         image = original.convert("RGB")
-    if min(image.size) < 8:
-        raise ValueError("Image must be at least 8 pixels across")
-    ImageDraw.Draw(image).rectangle((0, 0, image.width - 1, image.height - 1), outline=FRAME, width=4)
     check_cancelled(cancel)
     output = io.BytesIO()
     image.save(output, format="PNG")

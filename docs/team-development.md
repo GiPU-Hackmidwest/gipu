@@ -14,7 +14,7 @@ Read [project context](project-context.md), [protocol](protocol.md) and [native 
 | Tauri Android port | Teammate with Claude | Android shell, native adapters, mobile lifecycle and Android verification; reuse shared React UI |
 | Existing compute system | Preserve; coordinate changes | Coordinator, Python workers, deployment and protocol change only for an agreed requirement |
 
-The baseline is FastAPI/SQLite, Strands planning, Python Tiny-SD generation, and phone/browser image finishing. Each laptop generates a whole image; a phone applies the verified four-pixel frame. Credits are sandbox units. Hosting and agent availability must be checked live; historical evidence is in [verification](verification.md).
+The baseline is FastAPI/SQLite, Strands planning, Python Tiny-SD generation, and phone/browser image finishing. Each laptop generates a whole image; a phone finishes it, and the coordinator verifies the pixels are unchanged. Credits are sandbox units. Hosting and agent availability must be checked live; historical evidence is in [verification](verification.md).
 
 ## Integration rules
 
