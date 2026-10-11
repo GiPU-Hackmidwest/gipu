@@ -36,6 +36,13 @@ Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. St
 
 ## Log
 
+### 2026-10-11 · Codex · README review (PR #21 · `fix/v1-readme-review`)
+
+- Reviewed the Mac/iOS setup against actual scripts and merged #22 controls. Corrected root-relative Mac/Android commands, explicit worker `--join-code` (the worker does not load `.env`), `--connect-paused` for an existing identity, standalone/development cache differences and edit-before-start deployment order.
+- **Coordination:** README is Claude-owned; these narrow review fixes are part of Arboy's explicit request to review/fix/merge the open PRs. No runtime or dependency change.
+- **Verification:** command paths, worker flags and iOS signing/build instructions checked against source; whitespace check passes. The existing PR's fresh-clone build evidence remains in its log; these documentation corrections do not claim a new installation or deployment.
+- **Handoff:** preserve #22 UI terminology and #20 privacy fix when updating this stacked branch. No open question from the Mac/iOS README review.
+
 ### 2026-10-11 · Claude · README from a fresh clone (branch `docs/v1-readme`, stacked on the server PR)
 
 - **README.md** is rewritten as numbered paths:
