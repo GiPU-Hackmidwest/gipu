@@ -15,7 +15,7 @@ Earlier checks ran on the development Mac; the hosted check below uses the Akama
 | iOS native runtime | Xcode launched the app in iPhone17ProMax/iOS26.2 Simulator. Two real image jobs completed with native exports, image display, correct receipts, earned credits and a visible native notification banner. Manual Pause and Start → Home → reopen both left contribution paused. |
 | iOS exact pixel check |65,536pixels checked, border/interior exact; over-limit image rejected. Lifecycle race tests also pass. |
 | Coordinator and agent regressions |43tests: conservation, duplicate settlement, concurrency, lease recovery, resource limits, exact export verification, selected-device enforcement, fallback, per-stage preference windows, stale review fencing, SDK tool execution/budgets and slow-model isolation. Scripted models in unit tests are separate from the real Ollama check above. |
-| Akamai workshop adapter |Actual Strands/OpenAI adapter tested against simulated HTTP responses for tool-based routing and outcome review, missing-key handling and a non-retried401. Docker image rebuilt with the added dependency and Compose configuration validated. Authenticated workshop inference remains unverified until the saved key is available. |
+| Akamai workshop adapter | Actual Strands/OpenAI adapter has simulated HTTP checks for routing, outcome review, missing keys and non-retried401. Subsequent live authentication, submission and the asynchronous planning test below used the configured workshop key. This does not imply the hosted coordinator has its planner configured. |
 | Python worker regressions |4tests: frame/interior correctness, pause cancellation, denoising-step cancellation, and refusing external source URLs before forwarding credentials. |
 | Web bundle |TypeScript and Vite production build passed; live browser workflow exercised. |
 | Native Mac app |Tauri debug `.app` bundled and launched. Native login/network calls worked; an image job completed through laptop diffusion → Mac WebKit export. Receipt charged8/refunded2; Mac contributor earned1. Native notification opt-in succeeded; OS banner delivery was not asserted. |
@@ -44,6 +44,19 @@ On October 10, 2026, a real Python worker on the M4 Pro development Mac complete
 - The test device was paused with no active task, then its worker process stopped. Existing devices and deployment configuration were not changed.
 
 This is one real contributing Mac, not a physical-phone handoff or multi-laptop failover. These single-run timings exclude model startup and do not establish throughput, p95 latency, GPU performance or energy savings. Hosted Strands and the latest merged code were not exercised on this older manual-mode deployment.
+
+## Live asynchronous Strands check
+
+On October 10, the merged code at `01cd02f` was exercised through an isolated local HTTP coordinator with the real Strands SDK and Akamai `hackathon-chat` provider. [Recorded evidence](evidence/async-planning-akamai.json) separates this from the manual hosted test above.
+
+- POST returned `planning`, zero tasks and ten reserved credits in 0.0037 seconds over loopback. Repeating the same request ID returned the same job.
+- Strands called `inspect_devices`, `quote_job`, `submit_job` and `inspect_job`, selecting the real generation-only and finalization-only Python workers. Both were processes on one Mac.
+- Cached Tiny-SD generated the PNG locally in 2.993 seconds. The other worker performed the export, whose pixels were independently checked. The completed job settled ten reserved into seven contributor credits, one fee and two refunded.
+- Submission through observed completion and finished planning took 16.26 seconds. This includes model orchestration and polling, excludes worker model startup, and is a single smoke measurement.
+- A second request was cancelled after its durable planner claim started. It immediately returned the full ten-credit budget. Subsequent real planner `submit_job` calls received 409; the final job remained cancelled with zero tasks and a full-refund receipt. The planner still made bounded calls after cancellation; this test proves settlement/fencing, not immediate cancellation of provider billing.
+- Both workers were paused, all three test child processes stopped, and no existing coordinator or device was modified.
+
+The in-process `tests/live_agent_routing.py` harness now explicitly calls `plan_once` after asserting the durable acknowledgment, then reloads the stored job before reading routes. It previously assumed that `dispatch` had already planned the job and would fail before its recovery checks under the asynchronous contract. The repaired harness passed against the real Akamai provider: the agent rerouted an injected execution failure, the local CPU kernel generated the accepted image on attempt two in 3.397 seconds, and the terminal review inspected the balanced receipt. [Routing and review evidence](evidence/agent-routing-akamai.json) records those tool calls. Reproduce with `.venv/bin/python -m tests.live_agent_routing --provider akamai` after preparing the local model and provider key; this uses controlled clients on one Mac.
 
 ## Remaining external checks
 
