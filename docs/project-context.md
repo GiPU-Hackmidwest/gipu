@@ -1,6 +1,6 @@
 # PocketGrid project context
 
-This is the starting context for a developer or coding agent joining PocketGrid. Read it before planning work. It describes the implementation and decisions as of October 10, 2026. Source code and fresh test results take precedence over historical status notes; do not assume an old local process, IP address or credential is still available.
+This is the starting context for a developer or coding agent joining PocketGrid. Read it before planning work. It describes the implementation and decisions as of October 10, 2026. Current design-phase ownership is native macOS/iOS UX with Codex and the Tauri Android port with Claude; earlier models-versus-reliability handoffs are retired. Source code and fresh test results take precedence over historical status notes; do not assume an old local process, IP address or credential is still available.
 
 ## Product and purpose
 
@@ -50,7 +50,7 @@ Akamai does not discover hardware or install image models automatically. PocketG
 | benchmarks/ | Independent local-model tests and recorded exploratory CPU evidence |
 | tests/ | Coordinator, routing, adapter, lifecycle, worker and live integration checks |
 
-The earlier shared demo used a coordinator on Arboy's Mac. The Akamai Linode now serves the coordinator over public HTTPS. A real local Tiny-SD worker completed generation, export, delivery and settlement through it in manual mode on October 10; image computation stayed on the Mac. The observed server still ran commit 3544d5f, so the later merged async-planning and client changes require redeployment. See [hosted verification](verification.md#hosted-real-worker-check).
+Historical hosting evidence: the earlier shared demo used a coordinator on Arboy's Mac. The Akamai Linode subsequently served the coordinator over public HTTPS. A real local Tiny-SD worker completed generation, export, delivery and settlement through it in manual mode on October 10; image computation stayed on the Mac. That check observed server commit 3544d5f; it does not establish the currently deployed revision. At the design-phase handoff, the user reported hosted Akamai agent mode enabled and two laptop workers previously online/sharing. Recheck live health and device availability before a demo. See [hosted verification](verification.md#hosted-real-worker-check).
 
 ## Request through delivery
 
@@ -93,23 +93,23 @@ These are integer sandbox credits, not dollars, cash payouts or purchased AI cre
 
 Akamai has two separate roles: hosted chat-model access, already authenticated, and verified Linode coordinator hosting in manual mode. Strands supplies agent orchestration. DevRev was optional and has not been integrated. A sponsor reference in a pitch does not prove a completed integration.
 
-## Current model work
+## Historical model work and future proposals
 
 Tiny-SD is the live default. Benchmark PR #1 was merged into main before this guide was written. It adds pinned Tiny-SD, SD-Turbo and SDXL-Turbo profiles, but blocks experimental models in worker run mode because the coordinator currently has no model-selection contract. They can be prepared and tested without joining the grid.
 
 The initial 512px CPU comparison used two threads and six measured images per model: Tiny-SD at twelve steps had a 16.725-second median; SD-Turbo at four steps had a 5.372-second median. Sampled peak process RSS was 7898.5 MiB and 11236.3 MiB. The baseline overlapped model downloading/loading and had uncontrolled background activity. These are exploratory generation-only measurements, not end-to-end latency, GPU performance or proof of quality superiority. Visual prompt-following errors occurred in both. See benchmarks/cpu-baseline.json.
 
-Two threads were a conservative demo setting, not the Mac's capacity. Arboy's Mac has an M4 Pro and 48GB unified memory. The tool process reported MPS unavailable, while the user's normal Terminal reported it available. A subsequent native Mac app test loaded Tiny-SD on MPS, connected paused, and generated a real 256px image at twelve steps in 4.06 seconds, accepted by the coordinator for six credits. This is one generation-only smoke measurement, not a quality or throughput benchmark and not comparable to the 512px CPU baseline. Broader GPU comparisons and a better image model remain on Arboy's workstream.
+Two threads were a conservative demo setting, not the Mac's capacity. Arboy's Mac has an M4 Pro and 48GB unified memory. The tool process reported MPS unavailable, while the user's normal Terminal reported it available. A subsequent native Mac app test loaded Tiny-SD on MPS, connected paused, and generated a real 256px image at twelve steps in 4.06 seconds, accepted by the coordinator for six credits. This is one generation-only smoke measurement, not a quality or throughput benchmark and not comparable to the 512px CPU baseline. Broader GPU comparisons and a better image model were earlier workstream goals; they are outside the current native UX scope.
 
 Future routing may choose a local model or an explicitly permitted cloud image provider. Filter by capabilities, hardware, loaded model, queue, quality requirements, deadline and budget before any optional classifier. Short prompts are not necessarily easy images. Jev/Decision API integration is only a proposal; no classifier or cloud image fallback is currently implemented. Keep planning-provider choice separate from image-model choice.
 
-## Verified state and remaining work
+## Historical verification and checks still to reproduce
 
 Verified during development: actual local Tiny-SD generation; accepted results and sandbox settlement; native Mac and simulator export; live Strands/Ollama routing/recovery with controlled clients; local Docker coordinator with a real laptop worker; successful Akamai chat authentication; a real Akamai Strands job submission; Linode SSH login; a real laptop image job through the hosted HTTPS coordinator with a balanced receipt; physical teammate iPhone installation, joining and job submission.
 
 The latest observed physical-phone job had two completed laptop generations and queued finalization tasks while phone sharing was paused. Do not claim successful physical-phone finalization from that observation. Do not claim multi-laptop physical failover from tests using multiple processes on one Mac.
 
-Outstanding verification includes deployment of the latest merged code, hosted Strands planning, physical-phone end-to-end finalization, two physical laptops recovering a lost task, AWS Bedrock if selected, GPU model benchmarks and real payment integration if later in scope. Source docs may contain earlier snapshots; this status does not substitute for checking fresh runtime state.
+Recheck the deployed revision and hosted planner before the current UI end-to-end test. Physical-phone finalization and two physical laptops recovering a lost task still require direct evidence. AWS Bedrock, GPU model comparisons and real payment integration remain separate future work if selected. Source docs may contain earlier snapshots; this status does not substitute for checking fresh runtime state.
 
 Known issues and lessons:
 
@@ -120,29 +120,19 @@ Known issues and lessons:
 - SSH firewall /32 rules use public IPs and can go stale when hotspots or networks change. API keys and SSH keys solve different problems.
 - An earlier Akamai 401 was resolved by saving the working workshop key. Do not assume the provider remains down based on old docs.
 
-## Agreed team ownership
+## Current design-phase ownership
 
-Arboy with Codex owns local image models, worker/model adapters, benchmarks, standalone routing decisions and web/Tauri/SwiftUI UX. The teammate with Claude owns coordinator reliability, persistence/accounting tests, durable submission/recovery, Docker/Caddy and Linode deployment. Claude integrates routing into the coordinator once both sides agree on the interface.
+- Arboy with Codex: native macOS Tauri and iOS SwiftUI UX, shared visual language, supporting platform-neutral React components, and focused client verification.
+- Teammate with Claude: port the Tauri application to Android, reusing shared UI while isolating Android lifecycle and native integrations.
+- Preserve coordinator, Python model workers, deployment and protocol. A specific UI requirement that needs a contract change must be agreed across workstreams first.
 
-Coordinate changes to API payloads, job states, model IDs, pricing and dependencies before implementing both halves. Prefer a reviewed contract change in docs/protocol.md, followed by small server and client PRs. Keep the known working Tiny-SD path available. Do not independently rewrite the other person's files or silently merge incompatible schemas.
+The earlier split of Codex models/routing/UI versus Claude reliability/deployment is retired. Durable asynchronous planning and hosted deployment have implementation and historical verification already; do not treat the old handoff as a request to rebuild them. Model experiments and proposed routing contracts above are background, not current deliverables.
 
-## Claude starting plan
+Use three destinations: **Create**, **Contribute**, **Activity**. Joining precedes those journeys. Keep user-facing text very short; reveal setup, processor, planning and accounting detail only when needed. See [native UI design](native-ui-design.md) for the reference translation, screen map, tokens and Android integration constraints.
 
-You do not need image-model weights to work on the coordinator. Clone the repo, read AGENTS.md and this guide, create your own feature branch, and configure a local .env from .env.example. Use manual planning for initial backend work. Follow scripts/setup.sh and README.md for the Python 3.11 and Node setup.
+Coordinate shared React/Tauri edits before starting. `isMacDesktop` must gate Mac worker integrations; a Tauri runtime can also be Android. Keep `DesktopWorkerPanel` mounted when changing destinations because its cleanup stops the managed worker. SwiftUI retains native tab navigation and foreground-only contribution. Preserve explicit opt-in, durable request acknowledgement, stale-response fencing, cancellation and receipts.
 
-First establish a green coordinator test baseline:
-
-```sh
-.venv/bin/python -m pytest tests/test_coordinator.py tests/test_routing.py tests/test_agent.py tests/test_akamai.py tests/test_lifespan.py -q
-```
-
-Fake workers in those tests are appropriate for lease, retry and accounting tests. They are not evidence of real image inference. Coordinate a final physical test with Arboy's live worker.
-
-Priority one: propose and implement durable asynchronous planning. Return a persisted job/request identifier promptly; retain idempotency across timeouts and restarts; expose planning, queued, running and terminal states coherently; prevent duplicate reservations; define cancellation during planning; preserve budgets and review fencing. Agree new states and responses with Arboy for the UI. Do not replace accounting with in-memory state to simplify this change.
-
-Priority two: deploy the coordinator to Linode following deploy/README.md and deploy/workshop.md. Use HTTPS, a private join code, persistent database/images and verified restart behavior. The existing container is CPU-only and does not need model downloads. Test health, create a device-compute job and verify the receipt. Document the deployed commit and recovery steps. Keep credentials and server access details outside the repo.
-
-Priority three: joint failure tests. Disconnect a real generation laptop, restart the coordinator during a job, pause/expire a device and retry an uncertain request. Confirm no stale completion, double payment, lost reservation or surprise resumed sharing. Finish with an understandable UI and repeatable demo.
+Read [team development](team-development.md) for the current handoffs. Historical test evidence describes its stated devices and revision, not today's live availability.
 
 ## Deployment and trust boundaries
 

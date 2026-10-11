@@ -1,4 +1,6 @@
+// Tauri also runs on mobile. Only macOS can launch the prepared Python worker.
 export const isDesktop = '__TAURI_INTERNALS__' in window;
+export const isMacDesktop = isDesktop && /Macintosh|Mac OS X/.test(navigator.userAgent) && !/iPhone|iPad/.test(navigator.userAgent);
 export class Api {
   constructor(readonly server: string, readonly token: string) {}
   url(path: string) { return `${this.server.replace(/\/$/, '')}${path.startsWith('/api/') ? path : `/api${path}`}`; }

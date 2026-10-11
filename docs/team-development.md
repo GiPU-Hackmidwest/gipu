@@ -1,24 +1,49 @@
 # PocketGrid team development
 
-Keep the working device-compute demo available while improving image quality, routing, reliability and presentation. The agreed split is: Arboy with Codex owns models, routing and UI; the teammate with Claude owns reliability and deployment.
+The current design phase improves the existing native apps. Keep the working distributed-compute system available. This ownership split replaces earlier models/UI versus reliability/deployment handoffs.
 
-Read [the full project context](project-context.md) for the detailed architecture, actual device roles and verified status.
+Read [project context](project-context.md), [protocol](protocol.md) and [native UI design](native-ui-design.md) before changing behavior.
 
-## Current baseline
+## Current ownership
 
-Python coordinator with SQLite, AWS Strands planning through the Akamai chat endpoint, Python Tiny-SD laptop workers, SwiftUI phone finalizers and React/Tauri clients. Image tasks are independent whole-image computations. Phones do final processing, not distributed diffusion layers. Credits are sandbox units. Linode SSH is verified; application deployment remains pending. Cloud image generation is not implemented.
+| Workstream | Owner | Scope |
+| --- | --- | --- |
+| Native macOS and iOS UX | Arboy with Codex | React/Tauri Mac interface, SwiftUI app, shared visual language and platform-neutral frontend components |
+| Tauri Android port | Teammate with Claude | Android shell, native adapters, mobile lifecycle and Android verification; reuse shared React UI |
+| Existing compute system | Preserve; coordinate changes | Coordinator, Python workers, deployment and protocol change only for an agreed requirement |
 
-## Ownership
+The baseline is FastAPI/SQLite, Strands planning, Python Tiny-SD generation, and phone/browser image finishing. Each laptop generates a whole image; a phone applies the verified four-pixel frame. Credits are sandbox units. Hosting and agent availability must be checked live; historical evidence is in [verification](verification.md).
 
-| Workstream | Owner | Main files | First deliverable |
-| --- | --- | --- | --- |
-| Model quality and routing | Arboy with Codex | workers/python/, new services/routing/, new benchmarks/ | Reproducible Tiny-SD versus SD-Turbo versus SDXL-Turbo benchmark and pure routing interface |
-| Reliability and deployment | Teammate with Claude | services/coordinator/, deploy/, coordinator tests | Durable asynchronous submission, reliable recovery and public HTTPS deployment |
-| UI and demo | Arboy with Codex | apps/web/, apps/ios/ | Clear planning, waiting, generating, finishing and completed states; actionable sharing controls |
+## Integration rules
 
-Claude owns coordinator integration, including agent.py, store.py, persistence and server-side routing enforcement. Codex owns the standalone routing decision module, model adapters, worker changes and client presentation. Agree request/response fields in docs/protocol.md before implementing cross-boundary changes. Coordinator schemas, pricing and shared dependencies require a coordinated PR; avoid editing the same files simultaneously.
+- Agree shared React/Tauri file ownership before parallel edits. Keep native operations behind platform adapters; common views and API state remain reusable.
+- Gate `DesktopWorkerPanel` with `isMacDesktop`, not generic Tauri presence. Android must not call the prepared Python-worker commands or inherit Mac filesystem assumptions.
+- Keep `DesktopWorkerPanel` mounted across Create/Contribute/Activity navigation. Its cleanup intentionally disconnects the managed process; hide inactive sections instead of unmounting it.
+- SwiftUI uses native tabs and system controls. Android owns its lifecycle and permission behavior. Foreground-only finishing, explicit Start, Pause and expiry remain product requirements.
+- Preserve durable acknowledgement, accepted/cancelled jobs during refresh failures, stale-response fencing, idempotency and exactly-once settlement. Do not change endpoint or pricing contracts as a styling shortcut.
+- User-facing copy must be minimal. Show status and the next action; put setup, planning, telemetry and full accounting behind disclosure. See the design guide for the three journeys.
 
-## Routing design
+## Focused branches and review
+
+Start from current main and use a branch per coherent change. The native UX work is on `feat/native-ui-journeys`; the Android owner chooses a separate focused branch. Keep main runnable, review shared-file changes together and merge agreed contract changes before dependent implementations.
+
+Do not commit `.env`, credentials, worker identities, databases, model weights, generated test images or personal Xcode signing changes. Preserve the local `apps/ios/PocketGrid.xcodeproj/project.pbxproj` signing edits without including them in the UX commit.
+
+A UI PR should describe the visible outcome, Android integration points and actual verification. Separate production builds, automated tests, simulator visuals and physical-device evidence. A rendered mockup or an earlier real-device run does not verify the redesigned app.
+
+## Claude handoff
+
+Port Tauri to Android using shared Create, Contribute and Activity views. Read the platform gate and lifecycle rules above before changing `apps/web/`. Isolate Android credentials, native notifications, downloads and lifecycle integration. Coordinate shared layout changes with Codex. Do not rewrite coordinator reliability, deployment, model selection or accounting based on the retired handoff. Test on Android and report device/emulator scope explicitly.
+
+## Codex handoff
+
+Implement and verify the macOS Tauri and iOS SwiftUI journeys using the attached visual reference. Keep common React presentation reusable. Preserve native worker startup/shutdown, token handling, opt-in and pause semantics. Build both apps, visually inspect rendered screens, and exercise the real request/contribute/result path when devices are available. Record any device-dependent gap rather than presenting simulated success as a live result.
+
+## Retired workstream context
+
+Earlier collaboration assigned Codex models, benchmarks and routing, and Claude coordinator reliability/deployment. Durable asynchronous planning and hosted deployment now have implementation and historical verification. The earlier proposal below is retained for context; it is not an instruction to repeat that work or extend scope during the native UX phase.
+
+## Historical routing proposals (outside the native UX scope)
 
 Do not equate short prompts with easy images. Typography, exact object counts, relationships, reference images, resolution and requested quality affect model suitability.
 
@@ -34,7 +59,7 @@ A Jev or other Decision API adapter must be optional and evaluated against the r
 
 Cloud generation requires a real image provider, credentials, cost accounting, timeouts and an output adapter. Akamai chat authentication does not verify its image API. Any cloud output must be labeled as cloud-generated; the phone finishing step should be optional unless the user needs it.
 
-## Evaluation and milestones
+## Earlier evaluation plan (historical; not the current task list)
 
 1. Commit the known working baseline and reproduce one local image on a second developer machine.
 2. Benchmark fixed seeds and a small prompt set: simple illustration, multiple objects, spatial relations, typography and a detailed scene. Use comparable resolution; keep cold and warm timings separate.
@@ -44,30 +69,8 @@ Cloud generation requires a real image provider, credentials, cost accounting, t
 6. Add a durable planning state and return a job ID quickly. Make retries, disconnect recovery and worker reconnects safe. The longer iOS timeout is a temporary mitigation.
 7. Improve UI against the settled contract, then deploy and test two real laptops plus the phone. A completed test includes balanced receipts, rejected stale completions and no work after pause/session expiry.
 
-## Git workflow
+## Access and historical test evidence
 
-Use a private shared repository initially. Each developer clones separately, creates a feature branch from main, and opens small PRs. Keep main runnable. Suggested branches: feat/model-benchmarks, feat/image-routing, fix/job-submission, feat/grid-status-ui. Merge contract changes first, then dependent implementations.
+Fake workers are useful for lease, retry and accounting checks; they do not prove real inference. Multiple processes on one Mac do not prove physical multi-laptop failover. The current UI flow needs a fresh live check with available laptops and, separately, a physical iPhone.
 
-Do not share .env through Git or chat. Use separate credentials where possible and configure each machine independently. Local session balances, identities and installed model weights do not travel with a clone. Read README.md for installation and verification commands.
-
-## Teammate onboarding and access
-
-The reliability and deployment work does not require local image models. Start with the coordinator environment and deterministic tests. Use fake workers in tests to exercise leases, retries and accounting; do not describe those tests as proof of real image generation. Arboy supplies a real laptop worker for the joint end-to-end test.
-
-First tasks:
-
-1. Clone the repo, read AGENTS.md and docs/protocol.md, and follow README.md setup. Keep credentials in the ignored local .env.
-2. Run the coordinator tests listed in README.md before changing behavior. Start in manual mode for provider-independent development; use the Akamai planner only when credentials are configured.
-3. On a fix/job-submission branch, add durable planning and prompt acknowledgement, retry idempotency and recovery after process restart. Coordinate the new client-visible states with Arboy before changing response contracts.
-4. On a separate deployment branch, prepare Linode Docker/Caddy HTTPS hosting, persistent data, health checks, restart behavior and documented recovery. Follow deploy/README.md and deploy/workshop.md. The coordinator does not need image-model weights or a GPU.
-5. Run a joint test with Arboy's real laptop worker and the physical phone, including disconnects, pause/session expiry and balanced receipts.
-
-For SSH access, the teammate generates or reuses their own key pair and sends only the public .pub contents to Arboy. Install that public key in the intended server account's ~/.ssh/authorized_keys on the existing Linode; adding a key to Cloud Manager alone does not install it retroactively. Preserve existing keys. Allow the teammate's current public IP on the SSH firewall rule and verify login. Share the server address and username separately; private SSH keys and API keys never go into the repository. Server access has not been granted by this document.
-
-## Claude handoff
-
-Read AGENTS.md, README.md, docs/protocol.md and this guide. Own coordinator reliability and Akamai Linode deployment. You do not need local image models to start. Run the deterministic coordinator tests, then create a feature branch for durable asynchronous job planning, fast acknowledgement, retry idempotency and restart recovery. Preserve device opt-in, session expiry, lease fencing and exactly-once settlement. Own services/coordinator/, deploy/ and their tests. Coordinate API changes with Arboy, who owns the model workers, standalone routing module and UI. Keep model weights off the coordinator. Prepare Docker/Caddy HTTPS deployment and validate the real device flow with Arboy's worker. Submit focused PRs with tests and deployment instructions.
-
-## Codex handoff
-
-Own local image-model quality, benchmarks, model-selection logic and the web/Tauri/SwiftUI interfaces. Preserve Tiny-SD as a working fallback. Benchmark model quality, latency and memory on the actual laptop before selecting a replacement. Implement routing as a separate module with a reviewed contract for Claude to integrate into the coordinator. Expose local/cloud execution, planning and queue states, actual stage timings, workload controls and receipts. Coordinate server schema and pricing changes with the teammate; do not independently rewrite agent.py or store.py. Supply the real image worker for joint reliability and deployment validation.
+Each developer configures local credentials independently. If server access is needed, exchange only the teammate's public SSH key, install it in the intended server account while preserving existing keys, and configure the current public IP firewall rule. This document does not grant server access. Keep private keys and API keys out of Git and chat.

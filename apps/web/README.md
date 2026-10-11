@@ -2,6 +2,14 @@
 
 This client is intentionally small: join a grid, submit image jobs, share a foreground browser export worker, control owned devices, inspect accounting, and opt into notifications. Actual image inference runs in the separate Python worker. Browsers and phones execute a fixed image export transform; they do not run diffusion.
 
+## Native design phase
+
+Arboy with Codex owns the Mac and SwiftUI UX; the teammate with Claude owns the Tauri Android port. The shared client has **Create**, **Contribute** and **Activity** destinations. Keep visible text short and expose technical setup through disclosure. See [design and Android integration notes](../../docs/native-ui-design.md).
+
+Mac worker controls are gated by `isMacDesktop`. A Tauri runtime alone is insufficient because Android also uses Tauri. Keep `DesktopWorkerPanel` mounted when navigation changes: its cleanup deliberately stops the managed Python process. The shared UI and HTTP API must remain platform-neutral; Android native adapters and lifecycle work belong to the Android owner.
+
+Tauri windows use `create: false` in configuration and are explicitly bootstrapped from each window configuration in Rust setup, preserving configured properties. The macOS-only download handler accepts frontend-fetched `blob:` images and reports completion. Android owns its download integration; do not assume macOS WebKit download handling works there or create a duplicate automatic window.
+
 ## Run
 
 With the coordinator running at `http://127.0.0.1:8787`:
@@ -25,7 +33,7 @@ npm run tauri build
 
 The release `.app` is placed under `src-tauri/target/release/bundle/macos`. This is an unsigned developer prototype, not a notarized distribution. The Mac app uses the same React client and a minimal Rust/Tauri host with the official notification plugin and user-triggered clipboard writing for device pairing. Set the coordinator URL to `http://127.0.0.1:8787` (or your grid host). Server CORS must allow the Tauri origin (`tauri://localhost` on macOS).
 
-Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect installed worker** under Devices. The app finds its build checkout by default; **Installed worker settings** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
+Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect installed worker** in **Contribute**. The app finds its build checkout by default; **Installed worker settings** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
 
 Connect explicitly starts one local Python process, loads the cached model and registers it **paused** under the current account. It never installs packages or downloads models. Once connected, set CPU threads, image size and session duration on **This Mac image worker**, then press **Start sharing**. Connecting consumes model memory even while paused. CPU thread limits are not GPU percentage or RAM quotas.
 
@@ -48,14 +56,24 @@ This is a prepared-checkout prototype, not a bundled worker installer. The app p
 
 ```sh
 npm run build
-node --experimental-strip-types --test tests/eventNotifications.test.mjs
+node --experimental-strip-types --test tests/*.test.mjs
 cargo check --manifest-path src-tauri/Cargo.toml
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 From the repository root, `node --experimental-strip-types --test apps/web/tests/desktopWorker.test.mjs` checks native-command ordering across disconnects and account changes. `workers/python/.venv/bin/python -m pytest tests/test_worker.py -q` checks paused registration and owner/server identity validation. Native process tests use an isolated fixture rather than image inference; one ignored test is that subprocess fixture.
 
-## Verified in this checkout
+## Design-phase checks
+
+- Production web build and 28 Node regression tests passed. Rust checks passed with 11 tests passed and one ignored subprocess fixture; 45 coordinator tests passed.
+- The native Mac debug `.app` built and rendered. **Connect installed worker** connected paused, and the managed worker's explicit Start/Pause controls were verified.
+- A real local native Mac generation job finished through the iOS simulator, with a receipt of 10 reserved / 8 charged / 2 returned. Native Mac Save confirmed successful completion in Downloads.
+- A browser test against the hosted coordinator through a loopback same-origin proxy completed with real Laptop2 generation and browser finishing. A planner request was durably acknowledged and cancelled with a full refund; successful hosted planner completion was not established by that check.
+- A 390px web viewport had no horizontal DOM overflow. Comprehensive dark-mode and accessibility QA and physical multi-laptop failover are not established by these checks.
+
+The results below predate the redesign and retain their original scope.
+
+## Historical verification before the native UI redesign
 
 - `npm run build`: TypeScript and production Vite build passed.
 - `cargo check`: passed on macOS with a repository-local Cargo cache.
