@@ -305,6 +305,8 @@ function CreateJob({ api, state, onCreated, developerTarget }: { api: Api; state
   const [prompt, setPrompt] = useState('A cat riding a tiny bicycle, playful illustration');
   const [count, setCount] = useState(1); const [size, setSize] = useState(256); const [steps, setSteps] = useState(12); const [budget, setBudget] = useState(10); const [agent, setAgent] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
   const minimum = count * ((state?.pricing.generate ?? 6) + (state?.pricing.finalize ?? 1)) + (state?.pricing.fee ?? 1);
+  // The price follows live grid supply; keep the reservation able to cover it.
+  useEffect(() => { setBudget(current => Math.max(current, minimum)); }, [minimum]);
   const pendingRequest = useRef<{ payload: string; id: string } | null>(null);
   const submitting = useRef(false);
   const [accepted, setAccepted] = useState<Job | null>(null);
