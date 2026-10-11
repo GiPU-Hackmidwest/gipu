@@ -23,15 +23,15 @@ struct CoordinatorSmoke {
             let deadline = Date().addingTimeInterval(240)
             while Date() < deadline {
                 _ = try await api.json(HeartbeatReply.self, "/api/devices/\(device.device.id)/heartbeat", token: device.token,
-                                       method: "POST", body: ["telemetry": ["backend": "Swift/CoreGraphics test"]])
+                                       method: "POST", body: ["telemetry": ["backend": "Swift/ImageIO test"]])
                 let claim = try await api.json(ClaimReply.self, "/api/devices/\(device.device.id)/claim", token: device.token,
                                                 method: "POST", body: [:])
                 if let task = claim.task, let lease = task.lease_id, let source = task.source_url {
                     let input = try await api.data(source, token: device.token)
-                    let output = try ImageProcessor.finalize(input, maxPixels: 262144)
+                    let output = try ImageProcessor.finalizeInvisible(input, maxPixels: 262144)
                     _ = try await api.data("/api/tasks/\(task.id)/progress", token: device.token, method: "POST",
-                                           body: ["lease_id": lease, "progress": 0.8, "stage": "Native Swift framed real generated image"])
-                    let body: [String: Any] = ["lease_id": lease, "png_base64": output.base64EncodedString(), "metrics": ["backend": "Swift/CoreGraphics"]]
+                                           body: ["lease_id": lease, "progress": 0.8, "stage": "Native Swift finished real generated image"])
+                    let body: [String: Any] = ["lease_id": lease, "png_base64": output.base64EncodedString(), "metrics": ["backend": "Swift/ImageIO"]]
                     let receipt = try await api.data("/api/tasks/\(task.id)/complete", token: device.token, method: "POST", body: body)
                     print("Native pixel output accepted: \(String(data: receipt, encoding: .utf8)!)")
                     let duplicate = try await api.data("/api/tasks/\(task.id)/complete", token: device.token, method: "POST", body: body)

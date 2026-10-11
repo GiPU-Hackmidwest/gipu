@@ -38,9 +38,9 @@ A V1 coordinator is required for linking, login, aggregate counts and authoritat
 
 ## What actually runs here
 
-The phone advertises `image_finalize`, never `image_generate`. **Runtime rollout is intentionally still legacy:** it downloads an image produced by a laptop’s model, applies a four-pixel RGB `(36,203,166)` inner frame using local CoreGraphics pixel operations, and uploads the PNG. The coordinator verifies the border and **every interior pixel** before paying the fixed sandbox credit amount. No cloud generation call is made by this app.
+The phone advertises `image_finalize`, never `image_generate`. It downloads an image produced by a laptop’s model, re-encodes it as a lossless PNG using local ImageIO, and uploads it without drawing a border. The coordinator verifies exact decoded RGB pixel equality before paying the fixed sandbox credit amount. No cloud generation call is made by this app.
 
-`ImageProcessor.finalizeInvisible` is a separately tested pixel-identical PNG re-encoder, ready for V1 cutover. `GridModel` does not call it yet. Do not infer finisher compatibility from `grid` or `verified`; the contract has no version negotiation. Switch the runtime only after the accepting coordinator deployment is explicitly confirmed.
+`GridModel` uses `ImageProcessor.finalizeInvisible` after the compatible hosted coordinator deployment (`a34aef0`, recorded in PR #28) and PR #29's coordinated finisher handoff. An accepting V1 coordinator is required; `grid` and `verified` are not capability negotiation. The legacy frame helper remains for compatibility regression checks, and the coordinator continues accepting older installed clients during rollout.
 
 - One active image at a time, using one CPU thread. The native phone worker has no adjustable CPU-thread control.
 - Maximum image pixels and timed contribution session are enforced by the coordinator, with a second pixel-limit check in the phone worker.
@@ -132,6 +132,12 @@ xcrun swiftc -module-cache-path .build/MacModuleCache \
   PocketGrid/ImageProcessor.swift Tests/InvisiblePixelParity.swift -o .build/invisible-parity
 python3 Tests/check_invisible_pixels.py .build/invisible-parity .build/invisible
 ```
+
+Invisible runtime cutover verification on October 11, 2026:
+
+- RGB, RGBA and indexed PNG pixel-parity and size-limit checks passed; lifecycle and identity/privacy harnesses passed. The coordinator smoke harness compiled with the runtime encoder.
+- Native Swift fixture outputs settled through the real coordinator with legacy-frame acceptance disabled: verified images, 8 charged/2 refunded, idempotent retries and no paused claims. These were deterministic source fixtures, not a live diffusion run or physical-phone test.
+- The updated app and asset catalog built in host Xcode for iPhone 17 Pro Max simulator at 03:36 local time. Physical-phone finishing remains pending.
 
 V1 controls verification on October 11, 2026:
 

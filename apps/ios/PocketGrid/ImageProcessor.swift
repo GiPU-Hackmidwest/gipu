@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 enum ImageProcessor {
     enum Failure: Error { case invalidImage, tooLarge, encodingFailed }
 
-    /// V1 path, tested but not selected by GridModel until deployment is confirmed.
+    /// V1 runtime finisher. The coordinator verifies exact decoded RGB equality.
     /// Re-encode the decoded image without drawing or color-space conversion.
     static func finalizeInvisible(_ data: Data, maxPixels: Int) throws -> Data {
         try Task.checkCancellation()

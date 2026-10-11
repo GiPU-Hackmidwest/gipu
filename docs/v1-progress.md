@@ -26,7 +26,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
 | C10 | Rename to GiPU | review: Tauri `productName`/window title and Android label are GiPU (`ci/v1-releases`); bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
-| C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | partial: verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime cutover pending |
+| C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | review: iOS runtime now uses invisible encoder after confirmed deployment; pixel/strict-settlement checks and simulator build pass; physical phone pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
@@ -35,6 +35,15 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · iOS frameless runtime (`feat/ios-invisible-finalize`)
+
+- **Coordination/gate:** reviewed PR #28's recorded hosted deployment of `a34aef0` (compatible coordinator on main `7963aca` plus Docker build fix), and PR #29's explicit iOS handoff. This satisfies the coordinator-first rollout gate; neither `grid` nor `verified` is treated as capability negotiation.
+- `GridModel` now calls the previously staged `ImageProcessor.finalizeInvisible`. Progress says "Finishing image" and telemetry identifies `Swift/ImageIO`. Existing explicit opt-in, cancellation, background/Pause handling, lease fencing and settlement requests are unchanged. The native coordinator-smoke harness follows the runtime encoder. The legacy frame helper remains for regression checks; the coordinator's legacy acceptance remains enabled for installed older clients.
+- **Actual verification:** rebuilt/ran `InvisiblePixelParity.swift` with `check_invisible_pixels.py`: all 65,536 decoded RGB pixels match for each RGB, alpha-bearing RGBA and indexed PNG fixture; pixel-limit rejection passed. Rebuilt/ran `LifecycleRace.swift` and `IdentityPrivacy.swift`: passed. Compiled the updated `CoordinatorSmoke.swift` harness.
+- **Strict coordinator fixture integration:** with `POCKETGRID_ACCEPT_LEGACY_FRAME=0`, submitted those native Swift encoder outputs to the real local `Store.complete` path using a temporary database. All three modes settled, exposed `verified: true`, charged 8/refunded 2, accepted duplicate completion idempotently, and a paused native device received no work. Sources were deterministic fixtures, not a live diffusion run or iPhone execution.
+- **Build:** the isolated branch's native app, including assets, built successfully in host Xcode for iPhone 17 Pro Max simulator at 03:36 local time. No project, bundle ID or signing settings changed. No physical-device build/install, hosted native job, or physical camera test is claimed.
+- **Handoff:** merge with PRs #28/#29; keep coordinator legacy acceptance until older installed clients migrate. Physical-phone QR/finishing and release validation remain open.
 
 ### 2026-10-11 · Codex · local release packaging review (PR #27)
 
