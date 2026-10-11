@@ -4,7 +4,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { Api, errorMessage } from './api';
 import { addLogin, createLinkCode, linkQrPayload, normalizeServer } from './identity';
 import { isLocalGridAddress } from './accountLinkPresentation';
-import type { LinkCode, Session } from './types';
+import { BuyCredits } from './BuyCredits';
+import type { LinkCode, Payments, Session } from './types';
 
 export function AccountLinkQR({ api, session, serverTime }: { api: Api; session: Session; serverTime?: number }) {
   const localAddress = isLocalGridAddress(session.server || location.origin);
@@ -38,7 +39,7 @@ export function AccountLinkQR({ api, session, serverTime }: { api: Api; session:
   </section>;
 }
 
-export function AccountPage({ api, session, username: existingUsername, supported, serverTime, leaving, onLeave }: { api: Api; session: Session; username?: string | null; supported: boolean | undefined; serverTime?: number; leaving: boolean; onLeave: () => Promise<void> }) {
+export function AccountPage({ api, session, username: existingUsername, supported, serverTime, leaving, onLeave, payments }: { api: Api; session: Session; username?: string | null; supported: boolean | undefined; serverTime?: number; leaving: boolean; onLeave: () => Promise<void>; payments?: Payments }) {
   const [username, setUsername] = useState(existingUsername ?? '');
   const [password, setPassword] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
@@ -53,5 +54,5 @@ export function AccountPage({ api, session, username: existingUsername, supporte
     catch (error) { setError(errorMessage(error)); }
     finally { pending.current = false; setBusy(false); }
   }
-  return <div className="account-layout">{supported ? <AccountLinkQR api={api} session={session} serverTime={serverTime} /> : <section className="panel stack"><h2>Link another device</h2><p>{supported === false ? 'Update this grid to link accounts.' : 'Connect to your grid first.'}</p></section>}<section className="panel stack"><h2>Keep your account</h2><p>{supported ? 'Link a second device or add a login.' : 'Your account is saved on this device.'}</p>{supported && <details><summary>{existingUsername || saved ? 'Update login' : 'Add a login'}</summary><form className="stack" onSubmit={save}><label>Username<input value={username} onChange={event => setUsername(event.target.value)} required autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={40} /></label>{(existingUsername || saved) && <label>Current password<input type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required autoComplete="current-password" /></label>}<label>New password<input type="password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} maxLength={200} autoComplete="new-password" /></label><button disabled={busy || leaving}>{busy ? 'Saving…' : 'Save login'}</button></form></details>}{saved && <p role="status">Login saved.</p>}{error && <p className="error" role="alert">{error}</p>}<button className="secondary" disabled={busy || leaving} onClick={() => void onLeave()}>{leaving ? 'Signing out…' : 'Sign out'}</button></section></div>;
+  return <div className="account-layout">{supported ? <AccountLinkQR api={api} session={session} serverTime={serverTime} /> : <section className="panel stack"><h2>Link another device</h2><p>{supported === false ? 'Update this grid to link accounts.' : 'Connect to your grid first.'}</p></section>}<BuyCredits api={api} payments={payments} /><section className="panel stack"><h2>Keep your account</h2><p>{supported ? 'Link a second device or add a login.' : 'Your account is saved on this device.'}</p>{supported && <details><summary>{existingUsername || saved ? 'Update login' : 'Add a login'}</summary><form className="stack" onSubmit={save}><label>Username<input value={username} onChange={event => setUsername(event.target.value)} required autoComplete="username" autoCapitalize="none" spellCheck={false} minLength={3} maxLength={40} /></label>{(existingUsername || saved) && <label>Current password<input type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required autoComplete="current-password" /></label>}<label>New password<input type="password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} maxLength={200} autoComplete="new-password" /></label><button disabled={busy || leaving}>{busy ? 'Saving…' : 'Save login'}</button></form></details>}{saved && <p role="status">Login saved.</p>}{error && <p className="error" role="alert">{error}</p>}<button className="secondary" disabled={busy || leaving} onClick={() => void onLeave()}>{leaving ? 'Signing out…' : 'Sign out'}</button></section></div>;
 }

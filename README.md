@@ -150,6 +150,10 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 
 Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
 
+## Buying credits (test mode)
+
+Accounts can buy credits with a card through Stripe Checkout, in **test mode only**: no real money moves, and live keys are refused. Credits can never be turned back into money. To enable it, create a free Stripe account, copy its test secret key (`sk_test_…`) into `STRIPE_SECRET_KEY` in `.env` (or `deploy/.env`), and restart the coordinator. **Account → Buy credits** then opens Stripe's checkout; pay with `4242 4242 4242 4242`, any future date and any CVC. For a hosted grid, optionally add a Stripe webhook to `https://YOUR-GRID/api/stripe/webhook` and set `STRIPE_WEBHOOK_SECRET`; without it the coordinator confirms payments by asking Stripe when you return.
+
 ## Image generation: cloud (demo) or on-device
 
 For the demo, the coordinator gets images from the Akamai workshop's hosted model (`hackathon-image`) instead of a local model. Everything else works the same: laptops still claim each image, hold its lease, upload it and earn its credits, and phones still finish it. Images made this way are labelled **Cloud-generated**. The team key stays on the coordinator.

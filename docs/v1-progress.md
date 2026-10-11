@@ -36,6 +36,21 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · buy credits with a card (Stripe test mode, branch `feat/buy-credits`)
+
+- **Why:** FinTech challenge. Sithabo asked for a money → credits pipeline only; credits must never convert back to money.
+- **Coordinator:**
+  - `payments.py` talks to Stripe's REST API with `httpx` (no new dependency). Fixed packs: 50/$5, 120/$10, 300/$20. Accepts `sk_test_` keys only and refuses live keys. Verifies webhook signatures (HMAC-SHA256, 5-minute tolerance).
+  - New `purchases` table. `settle_purchase` grants credits once, and only when Stripe reports paid, not livemode, and the same user/amount/currency the coordinator recorded. It writes a `purchase` ledger entry and a `credits_purchased` event.
+  - Routes: GET `/api/credits/packs`, POST `/api/credits/checkout`, GET `/api/credits/checkout/{id}` (own only), GET `/api/credits/return` (Stripe redirect page), POST `/api/stripe/webhook`. `/state.payments`.
+  - There is no payout, withdrawal or card-refund route, and a test asserts that.
+- **Clients:** a new Buy credits card on the Account page (`BuyCredits.tsx`). It opens Checkout in the system browser via `tauri-plugin-opener` (new dependency, scoped to `https://checkout.stripe.com/*`), or in a new tab on the web, then polls the coordinator until Stripe confirms. iPhone is not included: Apple's rules disallow outside payment for digital credits in iOS apps.
+- **Docs:** protocol, README, `deploy/.env.example` and compose (empty Stripe variable names only).
+- **Verification:**
+  - Coordinator: 96 passed, including 6 new tests in `tests/test_payments.py` against a fake Stripe API: the paid flow, credits granted exactly once, unpaid/wrong amount/currency/user/livemode never credited, other accounts get 404, fixed packs, signed and replayed webhooks, refusal of live keys, and no cash-out route.
+  - Web: 83 tests, `tsc -b` and build passed. Rust: `cargo check` passed with the opener plugin.
+  - **Not verified:** a real Stripe test-mode checkout (no `sk_test_` key exists yet, locally or on the server), and opening Checkout from the Mac/Android apps.
+
 ### 2026-10-11 · Claude · hosted deploy of `aace226` and releases v0.2.0 / v0.3.0
 
 - **Hosted coordinator** now runs `aace226` (main: dynamic pricing #34 plus cloud generation #35).

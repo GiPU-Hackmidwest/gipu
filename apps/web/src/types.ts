@@ -6,8 +6,10 @@ export type Job = { id: string; owner_id: string; prompt: string; status: string
 export type GridEvent = { id: string | number; kind: string; message: string; created_at: number; device_id?: string; user_id?: string; job_id?: string };
 // grid, username and verified are V1 fields; older coordinators omit them.
 export type GridCounts = { connected: number; ready_to_create: number; ready_to_finish: number };
+export type CreditPack = { id: string; credits: number; amount: number };
+export type Payments = { available: boolean; test_mode: boolean; currency: string; packs: CreditPack[] };
 export type Generation = { mode: 'cloud' | 'local'; model: string; available: boolean };
-export type Snapshot = { user: { id: string; name: string; username?: string | null }; balance: number; reserved: number; earned: number; grid?: GridCounts; generation?: Generation; devices: Device[]; jobs: Job[]; events: GridEvent[]; ledger: { id: string; job_id: string; kind: string; amount: number; note: string; created_at: number }[]; agent: { mode: string; available: boolean }; pricing: { generate: number; finalize: number; fee: number }; server_time: number };
+export type Snapshot = { user: { id: string; name: string; username?: string | null }; balance: number; reserved: number; earned: number; grid?: GridCounts; generation?: Generation; payments?: Payments; devices: Device[]; jobs: Job[]; events: GridEvent[]; ledger: { id: string; job_id: string; kind: string; amount: number; note: string; created_at: number }[]; agent: { mode: string; available: boolean }; pricing: { generate: number; finalize: number; fee: number }; server_time: number };
 export type Session = { token: string; name: string; server: string; userId?: string };
 export type SessionResponse = { token: string; session_id: string; user: { id: string; name: string }; balance: number };
 export type SessionInfo = { id: string; client_name: string; created_at: number; last_used_at?: number | null; current: boolean };
