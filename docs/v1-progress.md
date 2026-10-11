@@ -37,6 +37,15 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · Stripe test key verified end-to-end and enabled on hosted grid
+
+- **Verification:** Real Stripe test-mode API integration verified end-to-end locally and on the hosted coordinator using the configured `sk_test_` key.
+  - Successfully created real Stripe Checkout sessions (`cs_test_...`) and verified session status retrieval against Stripe's live test API.
+  - Configured `STRIPE_SECRET_KEY` securely in `/opt/pocketgrid/deploy/.env` (mode 0600) on the hosted grid (`https://66-228-53-243.ip.linodeusercontent.com`) and recreated the coordinator container.
+  - Hosted grid `/api/credits/packs` confirmed live and reporting `{"available": true, "test_mode": true}`.
+  - End-to-end authenticated checkout creation and purchase status query verified on the hosted coordinator.
+  - Added `STRIPE_SECRET_KEY=` configuration placeholder to `.env.example`.
+
 ### 2026-10-11 · Codex · weekly leaderboard (PR #37, `feat/weekly-leaderboard`, review)
 
 - **Coordination:** Arboy explicitly requested implementing and merging a leaderboard with availability, credits used and participation metrics. This authorizes the focused coordinator/protocol/test changes alongside Mac/shared React and native iOS. No Android adapter or release-workflow change.
