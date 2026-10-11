@@ -1,48 +1,61 @@
-# Releasing GiPU
+# Releasing GiPU locally
 
-`.github/workflows/release.yml` builds the downloadable apps:
+Build on your own computer, then upload the installers manually. No GitHub Actions, paid runners or repository signing secrets are needed. iPhone installs through Xcode; see the README.
 
-| File | What it is |
-| --- | --- |
-| `GiPU-<version>-macos-arm64.dmg` | Mac app for Apple silicon, with the image worker inside. The model (about 1 GB) downloads from **Contribute** on first use. |
-| `GiPU-<version>-android-arm64.apk` | Android app for 64-bit ARM phones (nearly all current phones). |
-| `SHA256SUMS.txt` | Checksums for both. |
+## Mac installer
 
-iPhone is not built here; it installs from source through Xcode (see the README).
+On an Apple silicon Mac, follow the README prerequisites, then run from the repository root:
 
-## Make a release
+```bash
+export VITE_DEFAULT_COORDINATOR=https://66-228-53-243.ip.linodeusercontent.com
+npm --prefix apps/web ci
+./scripts/build-desktop-app.sh --config '{"version":"0.2.0"}'
+mkdir -p dist
+stage="$(mktemp -d)"
+ditto apps/web/src-tauri/target/release/bundle/macos/GiPU.app "$stage/GiPU.app"
+ln -s /Applications "$stage/Applications"
+hdiutil create -volname GiPU -srcfolder "$stage" -ov -format UDZO dist/GiPU-0.2.0-macos-arm64.dmg
+hdiutil verify dist/GiPU-0.2.0-macos-arm64.dmg
+```
 
-1. Merge everything for the release into `main`.
-2. Tag and push:
+The app includes its worker; the model downloads only after the user asks. These paths assume the default Cargo target directory; if you set `CARGO_TARGET_DIR`, use the bundle path printed by the build instead. The temporary staging directory can be removed after verification.
 
-   ```bash
-   git tag v0.2.0 && git push origin v0.2.0
-   ```
+## Android installer
 
-3. The workflow builds both apps (about 30–45 minutes, mostly the Mac worker) and creates a **draft** release with generated notes.
-4. Open the draft on GitHub, check the notes and files, then publish it.
-
-The tag must look like `v1.2.3`; it becomes the app version. To build without publishing, run the workflow from **Actions → Release → Run workflow**. Files then stay attached to that run as artifacts. A pull request that changes the workflow also builds both apps without publishing.
-
-## One-time setup
-
-**Default grid address.** Set the repository variable `GIPU_DEFAULT_GRID` (Settings → Secrets and variables → Actions → Variables) to the hosted grid's `https://` address. New installs then suggest it on the join screen. Without it, people type the address themselves. Release Android builds only connect to `https://` grids.
-
-**Android signing.** Android only installs updates signed with the same key, so create it once and keep it safe:
+For team testing, use the README's debug APK instructions. To make a release APK, install the Android prerequisites and JDK 17, then create a signing key once:
 
 ```bash
 ./scripts/android-release-key.sh
 ```
 
-It writes the key and its passwords to `~/.gipu-release/` (owner-only permissions) and prints the two `gh secret set` commands that store them as repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. Back up that folder privately; losing it means existing installs cannot be updated.
+This keeps the key and a backup of its settings in `~/.gipu-release/` with owner-only permissions, and writes the gitignored `apps/web/src-tauri/gen/android/keystore.properties`. It refuses to overwrite existing signing files and uploads nothing. Back up the key privately: Android updates require the same key.
 
-Until those secrets exist, the workflow publishes a **debug-signed** APK named `...-debug.apk` and shows a warning. It installs, but it allows plain-http grids and is debuggable, so treat it as a test build. Release-signed and debug-signed APKs cannot update each other; uninstall first when switching.
+```bash
+export VITE_DEFAULT_COORDINATOR=https://66-228-53-243.ip.linodeusercontent.com
+cd apps/web
+npm ci
+npm run tauri android build -- --target aarch64 --apk --config '{"version":"0.2.0"}'
+```
 
-## What people see when installing
+Use the APK path printed by Tauri. Copy it to the repository's `dist/` as `GiPU-0.2.0-android-arm64.apk`. Without local signing settings, a release APK is unsigned and cannot be installed. Debug APKs are for testing; they are debuggable and allow HTTP. Debug and release APKs use different keys and cannot update each other.
 
-- **Mac:** the app is not signed with an Apple Developer ID or notarized. After dragging it to Applications, macOS blocks the first launch. Open **System Settings → Privacy & Security** and choose **Open Anyway**, or Control-click the app and choose **Open**. Signing and notarization need an Apple Developer account and can be added to the workflow later.
-- **Android:** sideloading needs **Install unknown apps** allowed for the browser or file manager used to open the APK. The app does not need Google Play.
+## Share a release
 
-## Verification record
+Test both installers first. Keep signing keys, settings and user data out of the upload. Generate checksums for the files you intend to share:
 
-See the V1 progress log for which parts of this workflow have actually run, locally or on GitHub.
+```bash
+cd dist
+shasum -a 256 GiPU-0.2.0-macos-arm64.dmg GiPU-0.2.0-android-arm64.apk > SHA256SUMS.txt
+```
+
+On the repository's **Releases → Draft a new release** page, select the reviewed main commit, create a version tag such as `v0.2.0`, and attach the DMG, APK and checksum file. Save as a draft, review, then publish when the team is ready. Creating a tag does not start a build.
+
+The repository is private, so downloads are available to people with repository access. For a team demo, installers can also be shared directly.
+
+## Installation limits
+
+- Mac builds are not Developer ID signed or notarized. macOS may block first launch; users must explicitly allow the app in System Settings → Privacy & Security. Signing and notarization require an Apple Developer account.
+- Android sideloading requires allowing installation from the app used to open the APK. Google Play is not required.
+- Release Android builds require an HTTPS grid address. Use a compatible deployed coordinator; building installers does not deploy it.
+
+Actual build and device evidence is recorded in [v1-progress.md](v1-progress.md).

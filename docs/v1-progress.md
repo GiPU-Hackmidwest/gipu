@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: release workflow (`ci/v1-releases`); DMG + signed APK built locally; Android signing secrets pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local release packaging (#27); DMG + signed APK built locally; publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | review: contract/server merged; review: Android adapters (#24); todo: hosted deploy | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | review: corrected server scoping merged; todo: hosted deploy | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
@@ -35,6 +35,12 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · local release packaging review (PR #27)
+
+- **Coordination:** Arboy requested review/merge and removal of unnecessary cost. This authorizes the narrow release/script/docs changes in Claude-owned files. GitHub-hosted Actions are not required for C1 and are removed, including automatic tag/PR runs and repository-secret setup. Builds stay local; publishing is a separate manual step.
+- Keep GiPU product/Android names, stable bundle IDs, optional local Android signing and installer packaging. The README must not claim downloads already exist before a release is published.
+- Validation: seven desktop wrapper artifact-selection checks, shell syntax and whitespace checks passed. An isolated local-signing fixture verified owner-only files, escaped paths, no password output/argv and overwrite refusal. Existing PR evidence covers real Mac DMG and signed Android APK builds. No release tag, key upload, hosted deployment or publication is performed by this review. The GitHub Release workflow is disabled at repository level as well as removed from this branch.
 
 ### 2026-10-11 · Claude · QR sign-in end-to-end check (local, `ci/v1-releases` at `53698fa`, includes #25)
 

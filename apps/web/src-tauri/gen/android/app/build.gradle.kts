@@ -14,8 +14,8 @@ val tauriProperties = Properties().apply {
     }
 }
 
-// Release signing is used only when gen/android/keystore.properties exists (CI writes it
-// from repository secrets; it is gitignored). Without it, release APKs stay unsigned.
+// Release signing is used only when the local, gitignored gen/android/keystore.properties
+// exists. Without it, release APKs stay unsigned.
 val keystoreFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystoreFile.exists()) {

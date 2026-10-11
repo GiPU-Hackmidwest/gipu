@@ -18,7 +18,7 @@
 
 ## Download
 
-Ready-made apps are on the [Releases page](https://github.com/pocketgrid-hackmidwest/pocketgrid/releases): a Mac app for Apple silicon (`.dmg`) and an Android app (`.apk`). Neither comes from an app store yet:
+When published, installers appear on the [Releases page](https://github.com/pocketgrid-hackmidwest/pocketgrid/releases): a Mac app for Apple silicon (`.dmg`) and an Android app (`.apk`). If no release is listed, use the source-build instructions below. Neither comes from an app store yet:
 - **Mac:** after moving the app to Applications, allow it once in **System Settings → Privacy & Security → Open Anyway**.
 - **Android:** allow **Install unknown apps** for the app you open the `.apk` with.
 
