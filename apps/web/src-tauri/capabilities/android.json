@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android",
+  "description": "Android-only: gipu:// links, QR scanning and Keystore-backed secrets",
+  "platforms": ["android"],
+  "windows": ["main"],
+  "permissions": ["core:event:default", "deep-link:default", "barcode-scanner:default", "secure-storage:default"]
+}

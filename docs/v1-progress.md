@@ -17,7 +17,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
 | C1 | Downloadable, easy app | todo: Mac DMG + Android APK releases | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
-| C2 | QR sign-in, same credit account | review: contract/server merged; todo: Android scanner, hosted deploy | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
+| C2 | QR sign-in, same credit account | review: contract/server merged; review: Android adapters (#24); todo: hosted deploy | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | review: corrected server scoping merged; todo: hosted deploy | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
@@ -35,6 +35,51 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): confirm the name GiPU and add the logo to `assets/brand/`. Status: **todo**.
 
 ## Log
+
+### 2026-10-11 · Codex · Android adapter review and integration (#24)
+
+- **Coordination:** Arboy explicitly requested review, conflict resolution and merge of incoming PRs. This narrow review updates Claude-owned Android session cleanup and regression tests, and preserves both workstreams in this log.
+- Merged current main into the stacked Android branch; retained the privacy fixes and simpler contribution UI.
+- Secure storage cleanup now reports an unsuccessful durable delete, and loading a secure session removes a stale plaintext copy. Storage errors continue to fail closed.
+- Verification: frontend production build, macOS Rust (15 passed, one ignored) and 61 frontend tests pass, including stale plaintext cleanup, fail-closed storage, listener teardown and camera cancellation. Camera scans accept an AbortSignal so the UI can stop them on teardown/backgrounding. A failed cold-link read releases the warm-link listener. Physical Android QR decoding remains a team device check.
+- **Handoff:** integrate the adapters into the new shared sign-in screen; retain Android-only plugin gates and unchanged bundle IDs.
+
+### 2026-10-11 · Claude · Android QR sign-in adapters (branch `feat/v1-android-identity`, stacked on the README PR)
+
+- **New dependencies (Android only), please review.** `tauri-plugin-deep-link` 2.6.1 and `tauri-plugin-barcode-scanner` 2.5.2, plus the matching npm packages.
+  - The Rust crates sit under `[target.'cfg(target_os = "android")'.dependencies]` and register only under `#[cfg(target_os = "android")]` in `lib.rs`.
+  - Their permissions are in a new `capabilities/android.json` with `platforms: ["android"]`, so the Mac build ignores them. `cargo check` and `cargo test` on macOS still pass (15 passed, 1 ignored).
+- **Shared files touched (coordinate):**
+  - `lib.rs`: Android-only plugin registration.
+  - `build.rs`: declares the ACL for the app-local `secure-storage` plugin.
+  - `package.json` and `Cargo.toml`.
+  - Nothing in `App.tsx` or `style.css`.
+- **Keystore storage.** `gen/android/.../SecureStoragePlugin.kt` is an app-local Kotlin plugin. It seals values with AES-256-GCM under a non-exportable Android Keystore key and stores only ciphertext in private SharedPreferences. There is no official Tauri Keystore plugin, and stronghold is slated for removal. The manifest now sets `allowBackup="false"` with backup and data-extraction rules that exclude all app data, including webview storage.
+- **Deep links.** `gipu://join` and `gipu://link` are configured in `tauri.android.conf.json`. The plugin injected the intent filters into the committed manifest; other hosts are rejected by Android.
+- **`apps/web/src/android.ts`** (new, logic plus one self-contained scan overlay):
+  - `secureStorage` and `secureSessionStore`: a `SessionStore` that migrates an existing `pocketgrid.session.v1` out of localStorage once.
+  - `listenForGridLinks`: cold and warm links, delivered once. Only fingerprints are remembered, because invite links contain the join code.
+  - `scanGridLink`: asks for camera permission first, then runs a windowed scan behind a transparent page with a frame and a **Cancel** button; Back also cancels.
+  - `androidAdapters()`: loads the real plugins on demand.
+- **Upstream bug worked around.** In `tauri-plugin-barcode-scanner` 2.5.2, `cancel()` clears the pending scan before rejecting it, so a cancelled `scan()` never settles. `scanGridLink` settles Cancel itself.
+- **Verification.**
+  - Web: 49 Node tests (7 new in `tests/android.test.mjs`), `tsc -b` and `npm run build` passed. macOS: `cargo check` and `cargo test` passed.
+  - The Android debug APK built. Emulator checks used a DevTools connection to the debug WebView:
+    - Secure storage round-trips. `shared_prefs/secure_storage.xml` holds only base64 ciphertext (0 plaintext matches). The value survives a force-stop and relaunch, and delete clears it.
+    - The `ALLOW_BACKUP` flag is absent from the installed package.
+    - A cold-start `gipu://link` and a warm `gipu://join` both reach `get_current`. The warm link also arrives as a `deep-link://new-url` event. `gipu://pay` does not resolve to the app.
+    - The camera prompt appeared and was granted. A windowed scan showed the camera behind the page, and cancel stopped the camera and restored the page.
+    - Notifications: Activity → **Enable notifications** showed the Android 13+ permission dialog. After Allow, a real job produced "A grid laptop started work on your images" and "Images ready…" notifications.
+  - **Not verified:** decoding a real QR code. The emulator's virtual camera would not turn toward the QR poster; parsing is covered by unit tests. Also not verified: a physical Android phone.
+- **Handoff (Codex):** the sign-in screens can use these on Android. Gate with `isMobileApp` (Android is the only Tauri mobile target):
+  ```ts
+  const android = await androidAdapters();
+  const session = await android.sessionStore.load();             // replaces localStorage on Android
+  await android.listenForGridLinks(link => signInWithGridLink(new Api(link.server, ''), link, 'Android'));
+  const scanned = await android.scanGridLink();                  // null if cancelled; CameraPermissionError → android.openCameraSettings()
+  ```
+  Restyle `.qr-scan` freely, but keep the page transparent while `html[data-scanning]` is set.
+- **Brand.** The GiPU logo is on `feat/gipu-brand` (`c4cbde6`, `brand/`, including `brand/android/` launcher layers and `ic_stat_gipu.svg`). Once it merges, Claude will wire the Tauri desktop and Android launcher icons and the Android notification icon (`plugins.notification.icon`).
 
 ### 2026-10-11 · Codex · account UI review (`feat/v1-account-ui`)
 
