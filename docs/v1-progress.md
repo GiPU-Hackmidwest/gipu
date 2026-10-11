@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | todo: Mac DMG + Android APK releases | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local release packaging (#27); DMG + signed APK built locally; publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
@@ -25,7 +25,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 78-test integrated regression pass complete |
 | C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
-| C10 | Rename to GiPU | todo: Tauri productName, Android/release names and remaining docs | done: GiPU in-app name and mark; bundle IDs/env names preserved |
+| C10 | Rename to GiPU | review: Tauri `productName`/window title and Android label are GiPU (`ci/v1-releases`); bundle IDs unchanged | done: GiPU in-app name and mark; bundle IDs/env names preserved |
 | C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; reviewed Python/browser/Android frameless finishers (#29); Android notification icon pending | partial: verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime cutover pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
@@ -35,6 +35,45 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · local release packaging review (PR #27)
+
+- **Coordination:** Arboy requested review/merge and removal of unnecessary cost. This authorizes the narrow release/script/docs changes in Claude-owned files. GitHub-hosted Actions are not required for C1 and are removed, including automatic tag/PR runs and repository-secret setup. Builds stay local; publishing is a separate manual step.
+- Keep GiPU product/Android names, stable bundle IDs, optional local Android signing and installer packaging. The README must not claim downloads already exist before a release is published.
+- Validation: seven desktop wrapper artifact-selection checks, shell syntax and whitespace checks passed. An isolated local-signing fixture verified owner-only files, escaped paths, no password output/argv and overwrite refusal. Existing PR evidence covers real Mac DMG and signed Android APK builds. No release tag, key upload, hosted deployment or publication is performed by this review. The GitHub Release workflow is disabled at repository level as well as removed from this branch.
+
+### 2026-10-11 · Claude · QR sign-in end-to-end check (local, `ci/v1-releases` at `53698fa`, includes #25)
+
+- **Setup:** a local coordinator on an empty database; the shared web UI in a browser stood in for the Mac side; an Android debug APK built from this branch ran on the `Medium_Phone` emulator; a laptop worker ran under a separate account.
+- **Passed:**
+  - **Invite.** Pasting a `gipu://join` link showed "Join this grid · Create a new account". Continue created `Guest YR52` with 100 credits.
+  - **Link QR.** Account → Show QR displayed a QR code, a typeable code and "Expires in 120s · single use". Rendered to PNG and decoded with the browser's `BarcodeDetector`, the QR reads `gipu://link?grid=http%3A%2F%2F127.0.0.1%3A8787&code=…`, so the code is valid and scannable as an image.
+  - **Typed code on Android (path A).** A fresh code plus `http://10.0.2.2:8787` signed the phone into `Guest YR52` with the same 100 credits. Reusing that code returned 400.
+  - **Shared credits.** The phone created an image; the worker generated (2.2 s) and finished it. The web side, which created nothing, then showed the same completed job, 92 available and an 8-credit charge. It listed 0 own devices while `grid` showed 1 connected, 1 ready to create and 1 ready to finish, so the other account's laptop stayed anonymous.
+  - **Deep link on Android (path B).** A warm `gipu://link` showed "Use this link? Signs out of this account on this device", then "Link your account · Use your existing credits". Continue returned the phone to `Guest YR52` with 92. The session list shows the old phone session revoked and exactly two active sessions.
+- **Findings:**
+  1. **The Link QR copies the signed-in address.** A desktop signed in through `127.0.0.1`/`localhost` shows a QR code that no other device can use. Hosted `https://` grids are unaffected. Suggestion (Codex, `AccountPage`): warn when the grid address is loopback, or offer the LAN address.
+  2. **The incoming-link prompt is easy to miss.** It renders mid-page, so on a scrolled screen a scan looks like it did nothing. Suggestion (Codex): bring it into view or show it as a dialog.
+  3. **Sessions can't be told apart.** The browser sign-in sends no `client_name` (it lists as blank) and Android sends "GiPU". Suggestion: send a device label such as Android/Mac/Browser. The UI call site is Codex's; `identity.ts` already accepts the parameter.
+- **Not verified:** reading a QR with a real or emulated camera (the scanner opens; decoding the printed code was only checked from the image), the native Mac shell with Keychain storage (the web UI was used for that side), the hosted coordinator (still pre-V1, so these endpoints are missing there) and physical phones.
+
+### 2026-10-11 · Claude · release builds (branch `ci/v1-releases`)
+
+- **`.github/workflows/release.yml`.** A `v1.2.3` tag builds `GiPU-<version>-macos-arm64.dmg` (bundled worker) and `GiPU-<version>-android-arm64.apk`, then creates a **draft** release with `SHA256SUMS.txt` and generated notes. Manual runs and pull requests that change the workflow build both and keep them as artifacts; they publish nothing. Only official `actions/*` are used; `uv` is pinned to `0.11.*`. The optional repository variable `GIPU_DEFAULT_GRID` sets `VITE_DEFAULT_COORDINATOR`.
+- **Android signing.** `app/build.gradle.kts` signs release builds only when the gitignored `gen/android/keystore.properties` exists; CI writes it from the `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` secrets. New `scripts/android-release-key.sh` creates the key once in `~/.gipu-release/` (mode 600) and prints the `gh secret set` commands; it never prints a secret and refuses to overwrite a key. Without secrets the workflow publishes a debug-signed `...-debug.apk` with a warning.
+- **Rename (C10).** `productName` and the window title are now GiPU, so the app is `GiPU.app`. The Android label is GiPU. The build scripts use the new bundle path. Bundle IDs are unchanged, so app data, the downloaded model and installed Android data carry over.
+- **Docs.** New `docs/releasing.md` covers tagging, secrets, the default grid and what installers see. The README gains a Download section.
+- **Verification** (local, in an isolated worktree because this checkout is shared):
+  - `build-desktop-app.sh --config '{"version":"0.2.0"}'` passed in 4 min 52 s, producing `GiPU.app` (651 MB).
+  - The workflow's DMG step passed: 266 MB, and `hdiutil verify` reports VALID. Mounted, the DMG holds GiPU 0.2.0 with identifier `dev.pocketgrid.desktop`, an ad-hoc signature, all 24 worker symlinks preserved, and a bundled worker that runs. The app launched without crashing.
+  - A signed release APK, built with a throwaway key (deleted after), passed in 2 min 20 s. `apksigner` verifies the v2 signature; `aapt2` shows `versionName 0.2.0`, `versionCode 2000` and label GiPU.
+  - The release APK installed on the emulator, launched with no plugin or class errors after R8, and accepted a `gipu://join` link.
+  - **Not verified:** the workflow on GitHub runners (the pull request triggers it), notarization (no Apple Developer account), and a physical Android install.
+- **Needs Sithabo:**
+  1. Run `./scripts/android-release-key.sh` and the two `gh secret set` commands it prints, and back up `~/.gipu-release/`.
+  2. Optionally set `GIPU_DEFAULT_GRID` once the hosted grid runs the V1 server.
+  3. Tag `v0.2.0` when ready.
+- **Codex note:** the Mac window and app are now named GiPU. `worker.rs` still says "PocketGrid app data" in one error message (Codex-owned).
 
 ### 2026-10-11 · Codex · finisher review (PR #29)
 
