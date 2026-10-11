@@ -1,0 +1,61 @@
+{
+  "coordinator": "Akamai Linode HTTPS",
+  "planner": {
+    "mode": "manual",
+    "available": false
+  },
+  "local_commit": "b85d322517830c9a8bd1661e4745e295cf3bc1b7",
+  "workload": "Tiny-SD local generation and Pillow finalization on one Mac",
+  "job_id": "04a40ff1023447819c3584ff328b482b",
+  "device_id": "5cf79ce185284efb820073d9c01e861f",
+  "request_to_completed_seconds": 5.775,
+  "passed": true,
+  "receipt": {
+    "budget": 10,
+    "contributor_total": 7,
+    "platform_fee": 1,
+    "refund": 2,
+    "total_charged": 8
+  },
+  "account": {
+    "balance": 99,
+    "reserved": 0,
+    "earned": 7
+  },
+  "tasks": [
+    {
+      "kind": "image_finalize",
+      "attempts": 1,
+      "metrics": {
+        "backend": "cpu",
+        "model": "Pillow",
+        "elapsed_seconds": 0.344
+      }
+    },
+    {
+      "kind": "image_generate",
+      "attempts": 1,
+      "metrics": {
+        "backend": "cpu",
+        "model": "segmind/tiny-sd",
+        "elapsed_seconds": 3.297
+      }
+    }
+  ],
+  "exact_export_pixels_verified": true,
+  "paused_after_test": true,
+  "worker_stopped": true,
+  "observed_date": "2026-10-10 America/Chicago",
+  "deployed_commit": "3544d5f",
+  "contributing_physical_devices": 1,
+  "server_runtime": {
+    "uid": 10001,
+    "torch_installed": false
+  },
+  "model_cache_only": true,
+  "scope_limits": [
+    "Manual planner; hosted Strands not tested",
+    "One physical Mac performed both stages; no physical-phone finalization or multi-laptop failover",
+    "Single warm-model smoke timing; excludes model startup and is not a latency benchmark"
+  ]
+}

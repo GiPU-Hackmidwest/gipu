@@ -50,7 +50,7 @@ Akamai does not discover hardware or install image models automatically. PocketG
 | benchmarks/ | Independent local-model tests and recorded exploratory CPU evidence |
 | tests/ | Coordinator, routing, adapter, lifecycle, worker and live integration checks |
 
-The active coordinator used during the shared demo ran on Arboy's Mac. An Akamai Linode exists and SSH access was verified, but successful public application deployment has not been verified in this chat. The planned deployment moves the coordinator and its durable data to Linode, while image computation stays on contributors.
+The earlier shared demo used a coordinator on Arboy's Mac. The Akamai Linode now serves the coordinator over public HTTPS. A real local Tiny-SD worker completed generation, export, delivery and settlement through it in manual mode on October 10; image computation stayed on the Mac. The observed server still ran commit 3544d5f, so the later merged async-planning and client changes require redeployment. See [hosted verification](verification.md#hosted-real-worker-check).
 
 ## Request through delivery
 
@@ -91,7 +91,7 @@ Examples:
 
 These are integer sandbox credits, not dollars, cash payouts or purchased AI credits. Flex's proposed relevance is the reserve/settle/refund/receipt flow; no Flex API or real-money integration exists. Do not invent Flex endpoints or claim sponsor eligibility without checking the actual competition requirements.
 
-Akamai has two separate roles: hosted chat-model access, already authenticated, and proposed Linode coordinator hosting. Strands supplies agent orchestration. DevRev was optional and has not been integrated. A sponsor reference in a pitch does not prove a completed integration.
+Akamai has two separate roles: hosted chat-model access, already authenticated, and verified Linode coordinator hosting in manual mode. Strands supplies agent orchestration. DevRev was optional and has not been integrated. A sponsor reference in a pitch does not prove a completed integration.
 
 ## Current model work
 
@@ -105,11 +105,11 @@ Future routing may choose a local model or an explicitly permitted cloud image p
 
 ## Verified state and remaining work
 
-Verified during development: actual local Tiny-SD generation; accepted results and sandbox settlement; native Mac and simulator export; live Strands/Ollama routing/recovery with controlled clients; local Docker coordinator with a real laptop worker; successful Akamai chat authentication; a real Akamai Strands job submission; Linode SSH login; physical teammate iPhone installation, joining and job submission.
+Verified during development: actual local Tiny-SD generation; accepted results and sandbox settlement; native Mac and simulator export; live Strands/Ollama routing/recovery with controlled clients; local Docker coordinator with a real laptop worker; successful Akamai chat authentication; a real Akamai Strands job submission; Linode SSH login; a real laptop image job through the hosted HTTPS coordinator with a balanced receipt; physical teammate iPhone installation, joining and job submission.
 
 The latest observed physical-phone job had two completed laptop generations and queued finalization tasks while phone sharing was paused. Do not claim successful physical-phone finalization from that observation. Do not claim multi-laptop physical failover from tests using multiple processes on one Mac.
 
-Outstanding verification includes public HTTPS coordinator deployment, real physical-device end-to-end finalization, two physical laptops recovering a lost task, AWS Bedrock if selected, GPU model benchmarks and real payment integration if later in scope. Source docs may contain earlier snapshots; this status does not substitute for checking fresh runtime state.
+Outstanding verification includes deployment of the latest merged code, hosted Strands planning, physical-phone end-to-end finalization, two physical laptops recovering a lost task, AWS Bedrock if selected, GPU model benchmarks and real payment integration if later in scope. Source docs may contain earlier snapshots; this status does not substitute for checking fresh runtime state.
 
 Known issues and lessons:
 
