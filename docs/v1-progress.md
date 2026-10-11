@@ -16,7 +16,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 
 | # | Criterion | Claude | Codex |
 | --- | --- | --- | --- |
-| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: v0.4.0 Mac/Android draft installers built; install checks/publication pending; TestFlight unavailable |
+| C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: v0.4.0 Mac package signature defect reproduced; repair validated locally; corrected installer/publication pending; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
 | C4 | No black text on orange | — | done: Arboy's later direction supersedes the original pair; logo orange with dark ink measures 5.34:1; native Mac inspected |
@@ -36,6 +36,15 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · Mac release install correction (`fix/mac-release-signature`)
+
+- **Coordination:** Arboy reported the other Mac rejects v0.4.0 as damaged and asked to verify/run the releases. This authorizes a focused packaging correction if the artifact is defective. Requesting coordination here for the shared desktop build script, its checks and release documentation; keep the approved manual-only workflow and worker deduplication.
+- **Cause:** the actual v0.4.0 draft DMG matches SHA-256 `68e217b6098db8978ada72375ccc9f43d854e6c73788f389eae7055ea52b87c3` and passes `hdiutil verify`, but its app has only a linker ad-hoc signature, `Info.plist=not bound`, and `Sealed Resources=none`. Strict bundle verification fails with "code has no resources but signature indicates they must be present". The worker's own signature is valid. Disk-image checks in the previous build were insufficient to catch this.
+- **Fix:** after deduplicating the fresh Mac bundle's worker resources, apply a final outer ad-hoc signature and require `codesign --verify --deep --strict`. Preserve inner PyInstaller signatures, stale/no-bundle safeguards and library symlinks. Fail if signing/verification is unavailable or fails; refuse a configured or detected certificate identity instead of silently replacing it. No automatic workflow trigger added.
+- **Verification:** shell syntax and seven artifact-selection checks passed using real signed tiny Mac app fixtures. Extra checks reject resource tampering, failed/missing signing, failed verification and both certificate-identity cases. A copy of the actual v0.4.0 app passed strict verification after final sealing (5,100 resource entries); its frozen worker ran `--help`. The repaired native app opened and rendered connected to its existing account; `lsof` confirmed its executable came from the repaired copy. No job was submitted and sharing was not enabled. The download was through the CLI, so this is launch evidence, not a fresh browser-quarantine approval or second-Mac result.
+- **Next:** merge the build fix and request a Mac-only manual v0.4.1 draft build. Keep the defective v0.4.0 Mac draft out of installation advice. No new Android or iPhone installation evidence is claimed.
+- **Handoff / Open questions:** Developer ID signing/notarization remains unavailable; determine whether this artifact has an invalid signature separately from normal Gatekeeper trust. The other Mac's processor has not been confirmed.
 
 ### 2026-10-11 · Codex · README refresh (PR #44, `docs/gipu-readme`)
 

@@ -38,11 +38,27 @@ touch "$BUILD_STAMP"
 
 # Tauri copies resources by following symlinks, which duplicates the PyTorch
 # libraries PyInstaller links into _internal (about 400 MB). Restore the links.
-# The bundle is not code-signed yet, so replacing a resource folder is safe here;
-# a signed build must re-sign after this step.
+# Sign the completed bundle after restoring resources. A linker signature alone
+# does not seal Info.plist/resources and fails macOS app verification.
 if [[ "$BUNDLE" = true && -d "$APP/Contents/Resources/worker" ]] \
   && [[ -n "$(find "$APP/Contents/Resources/worker" -prune -newer "$BUILD_STAMP" -print)" ]]; then
+  command -v codesign >/dev/null || { echo "codesign is required to seal the Mac app." >&2; exit 1; }
+  # This prototype has no Developer ID distribution pipeline. Never replace an
+  # explicitly configured certificate or an existing authority with ad-hoc signing.
+  if [[ -n "${APPLE_SIGNING_IDENTITY:-}" && "$APPLE_SIGNING_IDENTITY" != "-" ]]; then
+    echo "Developer ID builds must sign and notarize after worker deduplication; this wrapper supports ad-hoc builds only." >&2
+    exit 1
+  fi
+  SIGNATURE="$(codesign --display --verbose=2 "$APP" 2>&1 || true)"
+  if [[ "$SIGNATURE" == *"Authority="* ]]; then
+    echo "Refusing to replace an existing certificate signature with ad-hoc signing." >&2
+    exit 1
+  fi
   rm -rf "$APP/Contents/Resources/worker"
   cp -R "$WORKER" "$APP/Contents/Resources/worker"
-  echo "Desktop app: $APP ($(du -sh "$APP" | cut -f1))"
+  # PyInstaller already signs the inner executables/libraries. Keep those signatures
+  # and seal the outer app last; --deep is for verification, not recursive re-signing.
+  codesign --force --sign - "$APP"
+  codesign --verify --deep --strict --verbose=2 "$APP"
+  echo "Desktop app: $APP ($(du -sh "$APP" | cut -f1)); ad-hoc signature verified (not notarized)."
 fi

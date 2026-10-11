@@ -54,7 +54,9 @@ The repository is private, so downloads are available to people with repository 
 
 ## Installation limits
 
-- Mac builds are not Developer ID signed or notarized. macOS may block first launch; users must explicitly allow the app in System Settings → Privacy & Security. Signing and notarization require an Apple Developer account.
+- Mac builds use a final **ad-hoc signature** after worker deduplication; they are not Developer ID signed or notarized. The build fails if `codesign --verify --deep --strict` rejects the completed app. Ad-hoc signing seals the bundle against accidental modification but does not establish an Apple-verified developer identity. Users may still need **System Settings → Privacy & Security → Open Anyway**. See [Apple's first-launch guidance](https://support.apple.com/en-us/102445).
+- A valid DMG checksum does not prove the app inside is valid. Before sharing, mount the packaged DMG and run `codesign --verify --deep --strict --verbose=2 /Volumes/GiPU/GiPU.app`, then copy it out and test launch on a compatible Apple-silicon Mac. If it says **damaged**, check the signature and download again; do not advise disabling Gatekeeper or removing quarantine as a fix for a defective package.
+- The current wrapper refuses a configured Developer ID identity rather than silently replacing it with an ad-hoc signature. A future Developer ID build must sign after all resource changes and then notarize; that pipeline needs an Apple Developer account.
 - Android sideloading requires allowing installation from the app used to open the APK. Google Play is not required.
 - Release Android builds require an HTTPS grid address. Use a compatible deployed coordinator; building installers does not deploy it.
 
