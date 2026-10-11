@@ -54,6 +54,13 @@ def main(provider='ollama'):
         try:
             job=agent.dispatch(store,user,{'prompt':'A cheerful orange cat riding a tiny blue bicycle, cartoon illustration',
                 'count':1,'width':256,'height':256,'steps':12,'budget':10,'request_id':'live-agent-routing','use_agent':True})
+            assert job['status']=='planning' and job['tasks']==[] and job['reserved']==10
+            # This harness owns an in-process Store without the HTTP lifespan
+            # loop. Explicitly advance the durable planner before reading routes.
+            assert agent.plan_once(store),'Accepted request was not claimed for planning'
+            with store.tx() as db:
+                job=store.job(db,job['id'])
+            assert job['status']=='queued' and job['plan']['planning']['status']=='done',job['plan']
             chosen=job['plan']['routes']['image_generate']
             assert chosen,job['plan']
             extra=add('Unselected newcomer C')

@@ -1,0 +1,111 @@
+{
+  "source_commit": "01cd02f90fcf8751e9e4a3926de04fa9a7d3f649",
+  "scope": "Isolated local coordinator, real Strands/Akamai planner, two worker processes on one Mac",
+  "physical_contributor_hosts": 1,
+  "provider": "Akamai hackathon-chat",
+  "passed": true,
+  "completed_job": {
+    "id": "5542da5d1735414abbf7306ea20dbf3a",
+    "acknowledgment_seconds": 0.0037,
+    "submission_through_planning_done_and_completed_seconds": 16.26,
+    "receipt": {
+      "budget": 10,
+      "contributor_total": 7,
+      "platform_fee": 1,
+      "refund": 2,
+      "total_charged": 8
+    },
+    "routes": {
+      "image_generate": [
+        "0c41627c94e54bdeb5f120c02aa523b2"
+      ],
+      "image_finalize": [
+        "2b389b69a17341559aee752599f985fd"
+      ]
+    },
+    "tools": [
+      "inspect_devices",
+      "inspect_job",
+      "quote_job",
+      "submit_job"
+    ],
+    "tasks": [
+      {
+        "kind": "image_finalize",
+        "device_id": "2b389b69a17341559aee752599f985fd",
+        "attempts": 1,
+        "metrics": {
+          "backend": "cpu",
+          "model": "Pillow",
+          "elapsed_seconds": 0.023
+        }
+      },
+      {
+        "kind": "image_generate",
+        "device_id": "0c41627c94e54bdeb5f120c02aa523b2",
+        "attempts": 1,
+        "metrics": {
+          "backend": "cpu",
+          "model": "segmind/tiny-sd",
+          "elapsed_seconds": 2.993
+        }
+      }
+    ]
+  },
+  "cancelled_job": {
+    "id": "544a54cfa13745dfb2ff5f119f620989",
+    "planning_status": "cancelled",
+    "status": "cancelled",
+    "tasks": 0,
+    "receipt": {
+      "budget": 10,
+      "contributor_total": 0,
+      "platform_fee": 0,
+      "refund": 10,
+      "total_charged": 0
+    },
+    "tools": [
+      {
+        "tool": "inspect_devices",
+        "status_code": null
+      },
+      {
+        "tool": "quote_job",
+        "status_code": null
+      },
+      {
+        "tool": "submit_job",
+        "status_code": 409
+      },
+      {
+        "tool": "submit_job",
+        "status_code": 409
+      },
+      {
+        "tool": "submit_job",
+        "status_code": 409
+      },
+      {
+        "tool": "submit_job",
+        "status_code": 409
+      },
+      {
+        "tool": "submit_job",
+        "status_code": 409
+      }
+    ]
+  },
+  "account": {
+    "balance": 99,
+    "reserved": 0,
+    "earned": 7
+  },
+  "exact_export_pixels_verified": true,
+  "children_stopped": true,
+  "observed_date": "2026-10-10 America/Chicago",
+  "scope_limits": [
+    "Local loopback coordinator; not hosted Strands verification",
+    "Two real worker processes on one physical Mac; no physical-phone handoff",
+    "One measured request; not a p95 or throughput benchmark"
+  ]
+}
