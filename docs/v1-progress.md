@@ -19,7 +19,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C1 | Downloadable, easy app | review: local packaging (#27) and approved manual Actions (#33); publication pending | done: documented iOS source-build fallback; review: first run; TestFlight unavailable |
 | C2 | QR sign-in, same credit account | done (server): live on the hosted grid (`a34aef0`); Android adapters merged; physical camera scan pending | review: Mac/iOS account/link UI implemented; browser two-client link verified; physical camera check pending |
 | C3 | Private sessions | done (server): scoping live on the hosted grid | review: own-only presentation and Mac Keychain implemented; cross-account live journey passed |
-| C4 | No black text on orange | — | done: implemented and checked; iOS interaction check pending |
+| C4 | No black text on orange | — | done: Arboy's later direction supersedes the original pair; logo orange with dark ink measures 5.34:1; native Mac inspected |
 | C5 | Developer options page | — | done: implemented and checked; iOS interaction check pending |
 | C6 | Create images / Finish images toggles | done: Finish images verified on Android emulator | done: implemented; Mac live flow and lifecycle tests pass; iOS interaction check pending |
 | C7 | Activity without sensitive info | review: corrected public summaries merged | review: generic Activity/credit labels implemented and live-checked; 83-test integrated regression pass complete |
@@ -31,11 +31,21 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
 | C15 | Contribute layout on large screens | — | done: Mac and 320 px browser layout checked |
-| L1 | Weekly participation leaderboard (Arboy request) | handoff: additive coordinator rollout | review: metrics, privacy, clay UI and client builds verified; native leaderboard interaction pending |
+| L1 | Weekly participation leaderboard (Arboy request) | done: additive coordinator rollout at `21a4372`, existing balances/ledger preserved | done: merged #37; hosted API, native Mac and iOS simulator board/metrics/Join/Leave verified; physical-phone checks remain V1 handoff |
 
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · leaderboard merged and hosted rollout (`fix/leaderboard-rollout-record`)
+
+- **Merged:** PR #37 is on main as `21a4372f6c10f186c5704c813a693d264af38397`, including the final logo-orange primary buttons and teammate PR #38 payments. No open PR remained at the rollout check. The primary checkout is synchronized; personal Xcode signing changes are preserved outside the PR.
+- **Deployed:** the hosted coordinator now runs that exact code commit. Built while the old service served, checked zero active jobs/running tasks, stopped only the coordinator for the data snapshot and switch, and preserved `.env` and the Docker volume. Caddy remained up. Backups are `/root/backups/source-pre-leaderboard-2026-10-11.tgz` and `/root/backups/grid-pre-leaderboard-21a4372-2026-10-11.tgz`; the source archive excludes secrets. Restore inspection confirmed the original 17 accounts, their balances, ledger and jobs survived unchanged.
+- **Hosted verification:** healthy coordinator and HTTPS; an isolated account check exercised all four metrics, default-private membership, strict public nickname/metric fields, immediate Leave, authenticated access and unauthenticated 401. Both verification accounts ended private and logged out. No image jobs or cloud calls were made for this check. Akamai availability in health is configuration evidence, not a new inference benchmark. Stripe remains unconfigured; no real checkout claimed.
+- **Build and UI:** 118 integrated coordinator tests and 83 frontend tests passed. The merged primary checkout production frontend and Tauri debug build passed; its app measured 30.46 MiB. The final worktree native Mac app rendered Create and the hosted Leaderboard with the exact orange action fill, neutral clay score and actual goal ring. Saved sign-in loaded after Arboy allowed the existing session Keychain read; the earlier blank window was waiting on that prompt. The hosted account showed 10 points, one accepted task helped, zero credits used and zero sharing time. Goal navigation to Contribute left both toggles off. Local browser Join/Leave and 320 px checks remain fixture evidence.
+- **iOS:** final source typecheck, contract/lifecycle/privacy harnesses and host Xcode Run passed on iPhone 17 Pro Max / iOS 26.2. Arboy opened the Leaderboard tab; its stale offline test grid produced the expected inline retry state without repeated modal polling errors. Normal Activity sign-out and Password sign-in connected it to the isolated local fixture. The rendered clay screen showed 63 points, two of three goals done and four public members; Available changed the account rank from fourth to third with 20 minutes. Leave immediately removed the public row (four members to three) while retaining 63 private points, then Join restored it. User tab taps bypassed the simulator's missing automation targets; exposed form/filter/membership controls worked through accessibility. These are controlled fixture metrics, not physical phone or live inference results.
+- **Handoff:** current source builds can use the deployed endpoints. No release workflow was run and no new installer was published for #37; keep existing release instructions and manual-only workflow. This follow-up records evidence only, so the deployed application commit remains `21a4372`. Physical phone contribution/camera and full accessibility checks remain the V1 handoff, separate from these leaderboard checks.
+- **Open questions:** none on rollout or metric/privacy behavior.
 
 ### 2026-10-11 · Codex · weekly leaderboard (PR #37, `feat/weekly-leaderboard`, review)
 
