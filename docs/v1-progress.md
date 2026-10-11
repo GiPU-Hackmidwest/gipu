@@ -36,6 +36,29 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · cloud image generation for the demo (branch `feat/cloud-image-generation`)
+
+- **Request (Sithabo):** for demoing, generate images with a large hosted model through the same pipeline instead of a local model, keeping the local path available. FLUX.2 [klein] was investigated first and then dropped at Sithabo's request. Findings:
+  - the smallest complete build is the MLX 4-bit at 4.6 GB;
+  - the SDNQ build needs the GPL-3.0 `sdnq` package;
+  - `mflux` requires `transformers` 5.x.
+- **Coordinator:**
+  - `cloud_images.py` calls the Akamai workshop image API (`/v1/images/generations`, model `hackathon-image`). It requests 512 px, resizes to the task size, waits on `x-ratelimit-reset` within a bounded budget, and runs one request at a time (team quota is 6/min).
+  - New `POST /api/tasks/{id}/cloud-image` serves only a running generation task under its live lease. The key stays on the coordinator.
+  - The coordinator records cloud outputs in `cloud_outputs`, and `images[]` carry `generated_in`/`model`, so a finished image inherits the label.
+  - `/health` and `/state` include `generation`. The mode is cloud when `AKAMAI_API_KEY` is set (or `POCKETGRID_IMAGE_GENERATOR=cloud`), otherwise local Tiny-SD. Compose passes the setting.
+- **Worker:** new `CloudRenderer`. `--generator auto|cloud|local`, where `auto` follows `/health`. Claiming, leases, progress, upload and settlement are unchanged, and there's no model load in cloud mode. The local Tiny-SD path stays selectable rather than commented out, so tests and the fallback keep working.
+- **Mac app:** `connect_worker` takes optional `cloud_generation` and skips the model-download requirement. `parse_ready` accepts backend `cloud`. The panel passes the grid's mode and doesn't ask for the 1 GB download in cloud mode.
+- **Labels:** web/Mac captions and iOS captions add "Cloud-generated".
+- **Verification:**
+  - Coordinator: 90 passed (7 new in `tests/test_cloud_images.py`). Worker: 36 passed (2 new). Web: 83 and build. Rust: 16 passed, 1 ignored (new `cloud` ready-line assertion). iOS: `swiftc -typecheck` found 0 errors.
+  - Live local pipeline against a stand-in Akamai endpoint, with `POCKETGRID_ACCEPT_LEGACY_FRAME=0`:
+    - an `auto` worker detected cloud mode without loading a model;
+    - a 2-image 384 px request was served at 512 and resized to 384;
+    - the worker earned 7 per image (one-laptop dynamic price) and the images were finished and verified;
+    - all four images were labelled cloud, and the receipt was `20 = 16 + 1 + 3`.
+  - Not yet verified: the real Akamai call (only the hosted server holds the key; checked after deploy), and the Mac app shell in cloud mode.
+
 ### 2026-10-11 · Claude · dynamic pricing (branch `feat/dynamic-pricing`)
 
 - **Request (Sithabo):** more available computers make images slightly cheaper; fewer make them slightly more expensive.

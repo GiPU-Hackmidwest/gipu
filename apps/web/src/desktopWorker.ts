@@ -10,7 +10,7 @@ export type ModelStatus = {
   expectedBytes: number;
   message: string;
 };
-export type WorkerConnection = { projectRoot: string; server: string; sessionToken: string; backend: string };
+export type WorkerConnection = { projectRoot: string; server: string; sessionToken: string; backend: string; cloudGeneration?: boolean };
 type Invoker = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
 
 const nativeInvoke: Invoker = async (command, args) => {

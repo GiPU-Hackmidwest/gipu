@@ -86,6 +86,7 @@ class Store:
             CREATE TABLE IF NOT EXISTS user_sessions(id TEXT PRIMARY KEY,user_id TEXT,token TEXT UNIQUE,client_name TEXT,created_at REAL,last_used_at REAL,revoked_at REAL);
             CREATE TABLE IF NOT EXISTS link_codes(code TEXT PRIMARY KEY,user_id TEXT,expires_at REAL,used_at REAL);
             CREATE TABLE IF NOT EXISTS credentials(user_id TEXT PRIMARY KEY,username TEXT UNIQUE,salt TEXT,hash TEXT,updated_at REAL);
+            CREATE TABLE IF NOT EXISTS cloud_outputs(task_id TEXT PRIMARY KEY,model TEXT,created_at REAL);
             CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status,kind);
             CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
             CREATE INDEX IF NOT EXISTS sessions_user ON user_sessions(user_id);
@@ -619,6 +620,21 @@ class Store:
                 return {'task': self.task(db, db.execute('SELECT * FROM tasks WHERE id=?', (task['id'],)).fetchone()), 'device': self.device(db, device_id)}
             return {'task': None, 'device': self.device(db, device_id)}
 
+    def cloud_task(self, device_id, task_id, lease_id):
+        """What the hosted model needs for a generation task this device currently holds."""
+        with self.tx() as db:
+            task = self.live_task(db, task_id, device_id, lease_id)
+            if task['status'] != 'running':
+                fail(409, 'Task is no longer running')
+            if task['kind'] != 'image_generate':
+                fail(422, 'Only image generation runs in the cloud')
+            return {key: task[key] for key in ('prompt', 'width', 'height', 'seed')}
+
+    def record_cloud_output(self, task_id, model):
+        # Coordinator-side record: the label cannot be set or hidden by a worker.
+        with self.tx() as db:
+            db.execute('INSERT OR REPLACE INTO cloud_outputs VALUES(?,?,?)', (task_id, model, self.clock()))
+
     def live_task(self, db, task_id, device_id, lease_id):
         self.sweep(db)
         row = db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
@@ -726,8 +742,14 @@ class Store:
         # Only expose public job fields. A live lease is a worker credential.
         for task in job['tasks']:
             task.pop('lease_id', None)
+        cloud = {r['task_id']: r['model'] for r in db.execute(
+            'SELECT task_id,model FROM cloud_outputs WHERE task_id IN (SELECT id FROM tasks WHERE job_id=?)', (job_id,))}
+        def made_by(task):
+            # A finished image carries the label of the generation it copies.
+            model = cloud.get(task['id'] if task['kind'] == 'image_generate' else task['source_task_id'])
+            return {'generated_in': 'cloud', 'model': model} if model else {'generated_in': 'device'}
         job['images'] = [{'task_id': t['id'], 'url': t['output_url'], 'variant': t['variant'], 'stage': t['kind'],
-                          'verified': t['kind'] == 'image_finalize'} for t in job['tasks'] if t['output_url']]
+                          'verified': t['kind'] == 'image_finalize', **made_by(t)} for t in job['tasks'] if t['output_url']]
         job['receipt'] = {'budget': job['budget'], 'contributor_total': job['spent']-job['fee'], 'platform_fee': job['fee'], 'refund': job['refunded'], 'total_charged': job['spent']} if job['status'] in ('completed','cancelled','failed') else None
         return job
 

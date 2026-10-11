@@ -30,6 +30,8 @@ struct JobImage: Decodable, Identifiable {
     var id: String { task_id + stage }
     let task_id: String; let url: String; let variant: Int; let stage: String
     var verified: Bool? = nil
+    /// "cloud" when the coordinator's hosted model made the pixels (demo mode).
+    var generated_in: String? = nil
 }
 struct Receipt: Decodable {
     let budget: Int; let contributor_total: Int; let platform_fee: Int; let refund: Int; let total_charged: Int

@@ -127,6 +127,7 @@ pub fn connect_worker(
     server: String,
     session_token: String,
     backend: String,
+    cloud_generation: Option<bool>,
 ) -> WorkerStatus {
     let mut runtime = state.lock();
     runtime.refresh();
@@ -137,7 +138,9 @@ pub fn connect_worker(
         let program = match bundled_worker(&app) {
             Some(executable) => {
                 let paths = model_paths(&app)?;
-                if models.lock().refresh(&paths).phase != ModelPhase::Ready {
+                // On a cloud-generation grid the worker fetches images from the coordinator's
+                // hosted model, so no local model download is needed.
+                if !cloud_generation.unwrap_or(false) && models.lock().refresh(&paths).phase != ModelPhase::Ready {
                     return Err("Download the image model before connecting this worker.");
                 }
                 WorkerProgram::Bundled { executable, hf_home: paths.hf_home }
@@ -525,7 +528,7 @@ fn parse_ready(line: &str) -> Option<Ready> {
     // never forward arbitrary JSON fields or the model's diagnostic text.
     if ready.device_id.len() != 32
         || !ready.device_id.bytes().all(|byte| byte.is_ascii_hexdigit())
-        || !matches!(ready.backend.as_str(), "cpu" | "mps" | "cuda")
+        || !matches!(ready.backend.as_str(), "cpu" | "mps" | "cuda" | "cloud")
         || ready.model.is_empty()
         || ready.model.len() > 256
         || ready.model.chars().any(char::is_control)
@@ -1040,6 +1043,7 @@ mod tests {
         assert!(parse_ready("POCKETGRID_READY malformed").is_none());
         assert!(parse_ready(&ready_line().replace(DEVICE_ID, TOKEN)).is_none());
         assert!(parse_ready(&ready_line().replace("cpu", "auto")).is_none());
+        assert_eq!(parse_ready(&ready_line().replace("cpu", "cloud")).unwrap().backend, "cloud");
         assert!(parse_ready(&ready_line().replace("tiny-sd", &"x".repeat(4096))).is_none());
     }
 
