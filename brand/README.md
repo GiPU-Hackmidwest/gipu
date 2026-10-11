@@ -57,4 +57,4 @@ brand/tools/update_app_icons.sh
 
 It runs `tauri icon` with `tauri-icon.json` (iOS, Windows tiles and the Android adaptive and monochrome layers). It then replaces the desktop set (`icon.icns`, `icon.ico`, `icon.png` and the sized PNGs) with the macOS tile, since macOS applies no mask, and draws the Android 7 legacy icons with their own padding. Re-running it gives identical images; `icon.icns` may still differ byte-for-byte because of how it is packed.
 
-The native iOS app in `apps/ios` has no icon set yet; it is not generated here.
+The native SwiftUI app uses its own `apps/ios/PocketGrid/Assets.xcassets` AppIcon and in-app mark catalog, sourced from `brand/`. It is maintained separately from this Tauri icon generator; iOS AppIcon PNGs omit alpha.
