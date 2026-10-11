@@ -55,3 +55,7 @@ cargo check --manifest-path src-tauri/Cargo.toml
 - Browser Create submitted a job that completed through a Python generator and a native Swift exporter.
 - Built Mac app joined via `tauri://localhost`, created a job, exported the Python-generated result inside WebKit, showed the image and receipt, and opted into native notifications. OS banner delivery depends on system notification settings and was not asserted.
 - The active worker stopped on coordinator network loss; UI polling reconnects, while sharing requires another explicit Start.
+
+## Job status checks
+
+Run `node --experimental-strip-types --test apps/web/tests/jobStatus.test.mjs` from the repository root with Node 22. Status uses current API tasks, capabilities, limits and server time; it does not guarantee the next server assignment. Generation and verified export have separate counts, and contribution always requires an explicit action.

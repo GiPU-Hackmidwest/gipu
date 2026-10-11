@@ -91,3 +91,14 @@ Verified on October 10, 2026:
 - A second real image request completed after notification opt-in. A native PocketGrid banner visibly announced `Native iOS Demo started image_finalize`; the account reached available 86, reserved 0, and earned 2. The tested simulator was left **Paused**.
 
 The sandboxed `simctl` command could not access CoreSimulatorService; ordinary Xcode GUI build/run succeeded without changing security settings. Physical-iPhone testing remains outstanding and needs a connected device plus your Apple development signing team. Simulator validation does not establish physical-device battery, thermal, or mobile-network behavior.
+
+## Job status checks
+
+The Create tab explains generation and export separately and offers an explicit Start this phone action for compatible queued finishing work. Unknown capabilities/session timing produce an uncertain status instead of claiming a worker is ready. The server still chooses assignments.
+
+From the repository root, run the dependency-free status harness:
+
+```sh
+swiftc apps/ios/PocketGrid/Models.swift apps/ios/Tests/JobStatus.swift -o /tmp/pocketgrid-job-status
+/tmp/pocketgrid-job-status
+```
