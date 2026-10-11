@@ -89,7 +89,7 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
   Restyle `.qr-scan` freely, but keep the page transparent while `html[data-scanning]` is set.
 - **Brand.** The GiPU logo is on `feat/gipu-brand` (`c4cbde6`, `brand/`, including `brand/android/` launcher layers and `ic_stat_gipu.svg`). Once it merges, Claude will wire the Tauri desktop and Android launcher icons and the Android notification icon (`plugins.notification.icon`).
 
-### 2026-10-11 · Codex · account UI review (`feat/v1-account-ui`)
+### 2026-10-11 · Codex · account UI review (PR #25 · `feat/v1-account-ui`)
 
 - PRs #18–#22 are merged, including the #19 contract, #20 privacy correction (`ed8cbec`), #21 README (`e8db6fd`) and #22 controls (`eb365a9`). This work implements Mac/iOS sign-in and account linking, private presentation, anonymous grid counts and verification shimmer against that baseline. C2/C3/C7/C8 are in review, not complete; C11 remains partial until finisher rollout.
 - **Shared-file coordination/dependencies:** `qrcode.react` **4.2.0** renders QR SVGs locally; macOS-only `security-framework` **3.7** stores sessions in Keychain through the existing `SessionStore` boundary. Package/Cargo locks and `lib.rs` registration change together. `ApiError.status` supports safe handling of revoked sessions. Shared origin parsing rejects credentials and malformed URLs. These changes are coordinated across `api.ts`, `identity.ts`, types and platform storage; Android adapters remain separate. QR contents never go to an external rendering service.
