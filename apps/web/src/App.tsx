@@ -269,7 +269,7 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
       <div hidden={section !== 'create'}><div className="create-layout"><section className="panel compose-panel"><CreateJob api={api} state={state} onCreated={onJobResponse} developerTarget={requestTarget} /></section><GridScene state={state} onOpen={() => setSection('contribute')} /></div></div>
       <div hidden={section !== 'contribute'}>
         <div className={`contribution-layout ${isMacDesktop ? 'with-generation' : ''}`}>
-          {isMacDesktop && <section className="panel contribution-card"><div className="contribution-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="16" rx="3"/><path d="M2 25h28M12 12h8M16 8v8"/></svg></span></div><DesktopWorkerPanel session={session} api={api} devices={state?.devices ?? []} now={state?.server_time ?? NaN} onDeviceIdChange={setManagedId} developerTarget={developerTarget} onStopReady={registerManagedStop} /></section>}
+          {isMacDesktop && <section className="panel contribution-card"><div className="contribution-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="5" y="5" width="22" height="16" rx="3"/><path d="M2 25h28M12 12h8M16 8v8"/></svg></span></div><DesktopWorkerPanel session={session} api={api} devices={state?.devices ?? []} now={state?.server_time ?? NaN} onDeviceIdChange={setManagedId} developerTarget={developerTarget} onStopReady={registerManagedStop} cloudGeneration={state?.generation?.mode === 'cloud'} /></section>}
           <section className="panel contribution-card finish-card">
             <div className="contribution-art finishing-art" aria-hidden="true"><span><svg viewBox="0 0 32 32"><rect x="6" y="3" width="20" height="26" rx="4"/><path d="m11 16 4 4 7-8"/></svg></span></div>
             <ContributionToggle label="Finish images" status={deviceStatus(localDevice, state?.server_time ?? NaN)} checked={!!localDevice && canPauseDevice(localDevice, state?.server_time ?? NaN)} busy={busy === 'share'} disabled={!!busy || !state} onChange={enabled => { void (enabled ? startLocal() : pauseLocal()); }} />
@@ -349,7 +349,7 @@ function JobCard({ api, job, devices, now, canStartExport, onStartExport, own, b
       {progress.waitingForExport && canStartExport && <><button className="secondary" disabled={busy} onClick={() => void onStartExport()}>Turn on Finish images</button><small>Keep this window open. Turn off in Contribute to pause.</small></>}
     </div>
 
-    {images.length > 0 && <div className="gallery">{images.map(image => <ImageCard key={image.task_id} api={api} path={image.url} title={`Image ${image.variant + 1}`} verified={image.verified} />)}</div>}
+    {images.length > 0 && <div className="gallery">{images.map(image => <ImageCard key={image.task_id} api={api} path={image.url} title={`Image ${image.variant + 1}`} verified={image.verified} cloud={image.generated_in === 'cloud'} />)}</div>}
 
 
     {job.receipt ? <details className="receipt-details"><summary>Receipt · {job.receipt.total_charged} credits</summary><div className="receipt"><span>Reserved {job.receipt.budget}</span><span>Contributors {job.receipt.contributor_total}</span><span>Service fee {job.receipt.platform_fee}</span><span>Refund {job.receipt.refund}</span><strong>Charged {job.receipt.total_charged}</strong></div></details> : <p className="muted">Budget {job.budget} · still reserved {job.reserved} · accepted work paid {job.spent} · returned {job.refunded}</p>}
@@ -366,7 +366,7 @@ function NavIcon({ name }: { name: 'create' | 'contribute' | 'activity' | 'devel
   return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{name === 'create' ? <><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5Z" /></> : name === 'contribute' ? <><rect x="3" y="4" width="13" height="10" rx="2" /><path d="M1 18h13" /><rect x="17" y="10" width="5" height="10" rx="1" /></> : name === 'activity' ? <><path d="M3 12h4l3-7 4 14 3-7h4" /></> : <><path d="M4 7h16M4 17h16" /><circle cx="9" cy="7" r="3" /><circle cx="15" cy="17" r="3" /></>}</svg>;
 }
 
-function ImageCard({ api, path, title, verified }: { api: Api; path: string; title: string; verified?: boolean }) {
+function ImageCard({ api, path, title, verified, cloud }: { api: Api; path: string; title: string; verified?: boolean; cloud?: boolean }) {
   const [url, setUrl] = useState(''); const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
   const [saveReady, setSaveReady] = useState(!isMacDesktop);
@@ -380,5 +380,5 @@ function ImageCard({ api, path, title, verified }: { api: Api; path: string; tit
     return () => { disposed = true; unlisten?.(); };
   }, [url]);
   useEffect(() => { const controller = new AbortController(); let objectUrl = ''; setUrl(''); setError(''); void api.image(path, controller.signal).then(blob => { if (!controller.signal.aborted) { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl); } }).catch(error => { if (!controller.signal.aborted) setError(errorMessage(error)); }); return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); }; }, [api, path]);
-  return <figure className={verified === false ? 'image-verifying' : undefined} aria-busy={verified === false}>{url ? <a href={url} onClick={event => { if (!saveReady) { event.preventDefault(); return; } if (isMacDesktop) setSaveMessage('Saving…'); }} aria-label={`Save ${title}`} download={`gipu-${title.replaceAll(' ', '-').toLowerCase()}.png`}><img src={url} alt={`${title}, locally generated`} width="256" height="256" /></a> : <div className="image-placeholder">{error || 'Loading image…'}</div>}<figcaption>{title} · {imageLabel({ verified })}{url && ' · Save image'}</figcaption>{saveMessage && <small role="status">{saveMessage}</small>}</figure>;
+  return <figure className={verified === false ? 'image-verifying' : undefined} aria-busy={verified === false}>{url ? <a href={url} onClick={event => { if (!saveReady) { event.preventDefault(); return; } if (isMacDesktop) setSaveMessage('Saving…'); }} aria-label={`Save ${title}`} download={`gipu-${title.replaceAll(' ', '-').toLowerCase()}.png`}><img src={url} alt={`${title}, locally generated`} width="256" height="256" /></a> : <div className="image-placeholder">{error || 'Loading image…'}</div>}<figcaption>{title} · {imageLabel({ verified })}{cloud && ' · Cloud-generated'}{url && ' · Save image'}</figcaption>{saveMessage && <small role="status">{saveMessage}</small>}</figure>;
 }

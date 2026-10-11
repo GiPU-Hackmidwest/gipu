@@ -1,4 +1,5 @@
 """Checks real pixel transformations and immediate cancellation boundaries."""
+import base64
 import importlib.util
 import io
 import json
@@ -396,3 +397,21 @@ def test_model_load_failure_never_registers_or_reports_ready(monkeypatch, regist
         worker.main()
     assert "POCKETGRID_READY" not in capsys.readouterr().out
     assert not Path(args.identity).exists()
+
+
+def test_cloud_renderer_asks_the_coordinator_under_the_lease():
+    sent = []
+    def handler(req):
+        sent.append(req)
+        return httpx.Response(200, json={"png_base64": base64.b64encode(b"PNGDATA").decode(), "model": "akamai/hackathon-image"})
+    renderer = worker.CloudRenderer()
+    renderer.client = httpx.Client(base_url="http://grid.test", transport=httpx.MockTransport(handler))
+    stages = []
+    data = renderer.generate({"id": "task-1", "lease_id": "lease-1"}, threading.Event(), lambda v, s: stages.append(s), 2)
+    assert data == b"PNGDATA" and stages == ["generating in the cloud", "received cloud image"]
+    assert str(sent[0].url) == "http://grid.test/api/tasks/task-1/cloud-image" and json.loads(sent[0].content) == {"lease_id": "lease-1"}
+
+
+def test_grid_generation_falls_back_to_local_for_older_coordinators(monkeypatch):
+    monkeypatch.setattr(worker.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(httpx.ConnectError("down")))
+    assert worker.grid_generation("http://grid.test") == {"mode": "local"}

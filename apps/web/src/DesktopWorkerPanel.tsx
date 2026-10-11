@@ -12,7 +12,7 @@ import type { Device, Limits, Session, Snapshot } from './types';
 const idle: WorkerStatus = { phase: 'stopped', message: 'Image worker disconnected.' };
 const megabytes = (bytes: number) => `${Math.round(bytes / 1_000_000)} MB`;
 
-export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChange, developerTarget, onStopReady }: { session: Session; api: Api; devices: Device[]; now: number; onDeviceIdChange: (id: string | null) => void; developerTarget: HTMLElement | null; onStopReady?: (stop: (() => Promise<void>) | null) => void }) {
+export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChange, developerTarget, onStopReady, cloudGeneration = false }: { session: Session; api: Api; devices: Device[]; now: number; cloudGeneration?: boolean; onDeviceIdChange: (id: string | null) => void; developerTarget: HTMLElement | null; onStopReady?: (stop: (() => Promise<void>) | null) => void }) {
   const [projectRoot, setProjectRoot] = useState('');
   const [bundled, setBundled] = useState(false);
   const [model, setModel] = useState<ModelStatus | null>(null);
@@ -145,13 +145,13 @@ export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChang
 
   async function turnOn() {
     if (actionPending.current || modelActionPending.current || !initialized) return;
-    if (bundled && model?.phase !== 'ready') { if (model && model.phase !== 'downloading') setConfirmDownload(true); return; }
+    if (bundled && !cloudGeneration && model?.phase !== 'ready') { if (model && model.phase !== 'downloading') setConfirmDownload(true); return; }
     if (!bundled && !projectRoot.trim()) { setError('Prepare a worker in Developer options before creating images.'); return; }
     const epoch = ++intentEpoch.current;
     const cancelled = () => !mounted.current || intentEpoch.current !== epoch;
     actionPending.current = true; setPending(true); setStarting(true); setError('');
     const operation = connectAndStartContribution({
-      connect: () => desktopWorker.connect({ projectRoot: projectRoot.trim(), server: session.server, sessionToken: session.token, backend }),
+      connect: () => desktopWorker.connect({ projectRoot: projectRoot.trim(), server: session.server, sessionToken: session.token, backend, cloudGeneration }),
       status: () => desktopWorker.status(), cancelled, pause: pauseDevice,
       onStatus: next => { if (!cancelled()) { latest.current = next; setStatus(next); } },
       enable: async id => {
@@ -225,7 +225,7 @@ export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChang
     if (actionPending.current) return;
     actionPending.current = true; setPending(true); setError('');
     try {
-      const next = await desktopWorker.connect({ projectRoot: projectRoot.trim(), server: session.server, sessionToken: session.token, backend });
+      const next = await desktopWorker.connect({ projectRoot: projectRoot.trim(), server: session.server, sessionToken: session.token, backend, cloudGeneration });
       if (mounted.current) { latest.current = next; setStatus(next); }
     } catch (error) { if (mounted.current) setError(errorMessage(error)); }
     finally { actionPending.current = false; if (mounted.current) setPending(false); }
@@ -253,8 +253,8 @@ export function DesktopWorkerPanel({ session, api, devices, now, onDeviceIdChang
   const downloading = model?.phase === 'downloading';
   const observed = device ? deviceStatus(device, now) : 'Paused';
   const publicStatus = starting ? 'Starting…' : pending ? 'Updating…' : !initialized ? 'Getting ready…'
-    : downloading ? 'Downloading…' : bundled && !model ? 'Checking download…'
-    : bundled && model?.phase !== 'ready' ? 'One-time download needed'
+    : downloading ? 'Downloading…' : bundled && !cloudGeneration && !model ? 'Checking download…'
+    : bundled && !cloudGeneration && model?.phase !== 'ready' ? 'One-time download needed'
     : observed === 'Sharing' ? 'On' : observed === 'Working' ? 'Creating…'
     : observed === 'Paused' ? 'Off' : observed;
 

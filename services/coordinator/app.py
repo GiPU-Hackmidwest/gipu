@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 import secrets
 import threading
@@ -16,7 +17,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import agent
+from . import agent, cloud_images
 from .store import Store
 
 
@@ -92,6 +93,10 @@ class Completion(Strict):
     lease_id: str
     png_base64: str = Field(max_length=4_000_000)
     metrics: dict = Field(default_factory=dict)
+
+
+class CloudImage(Strict):
+    lease_id: str
 
 
 class Failure(Strict):
@@ -184,7 +189,9 @@ def create_app(data_dir=None):
 
     @app.get('/api/health')
     def health():
-        return {'ok':True,'service':'pocketgrid','agent':agent.status(),'inference':'participating devices only'}
+        generation = cloud_images.status()
+        return {'ok':True,'service':'pocketgrid','agent':agent.status(),'generation':generation,
+                'inference':'hosted model, via participating devices' if generation['mode'] == 'cloud' else 'participating devices only'}
 
     @app.post('/api/sessions')
     def session(body: Session):
@@ -225,6 +232,7 @@ def create_app(data_dir=None):
     def state(user=Depends(owner)):
         result = store.snapshot(user['id'])
         result['agent'] = agent.status()
+        result['generation'] = cloud_images.status()
         return result
 
     @app.post('/api/devices')
@@ -258,6 +266,20 @@ def create_app(data_dir=None):
         if len(str(body.metrics))>4000:
             raise HTTPException(422,'Metrics too large')
         return store.complete(device['id'],task_id,body.lease_id,body.png_base64,body.metrics)
+
+    @app.post('/api/tasks/{task_id}/cloud-image')
+    def cloud_image(task_id: str,body: CloudImage,device=Depends(worker)):
+        # The worker keeps its lease alive by heartbeat while the hosted model works.
+        if cloud_images.mode() != 'cloud':
+            raise HTTPException(409,'This grid generates images on devices')
+        task = store.cloud_task(device['id'],task_id,body.lease_id)
+        try:
+            png = cloud_images.generate(task['prompt'],task['width'],task['height'],task['seed'])
+        except cloud_images.CloudUnavailable as error:
+            raise HTTPException(503,str(error))
+        model = cloud_images.status()['model']
+        store.record_cloud_output(task_id,model)
+        return {'png_base64':base64.b64encode(png).decode(),'model':model,'backend':'cloud'}
 
     @app.post('/api/tasks/{task_id}/fail')
     def task_failed(task_id: str,body: Failure,device=Depends(worker)):

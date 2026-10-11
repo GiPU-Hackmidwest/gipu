@@ -150,6 +150,13 @@ docker compose --env-file deploy/.env -f deploy/compose.yaml up -d --build
 
 Caddy obtains the HTTPS certificate; the database and images live on a Docker volume. Every client then uses `https://YOUR-DOMAIN`. Upgrades, backups, a Linode setup without a domain, and recovery are in [deploy/README.md](deploy/README.md).
 
+## Image generation: cloud (demo) or on-device
+
+For the demo, the coordinator gets images from the Akamai workshop's hosted model (`hackathon-image`) instead of a local model. Everything else works the same: laptops still claim each image, hold its lease, upload it and earn its credits, and phones still finish it. Images made this way are labelled **Cloud-generated**. The team key stays on the coordinator.
+
+- **Cloud (used whenever `AKAMAI_API_KEY` is set):** put the team key in `.env` or `deploy/.env`. Workers need no model download; `run` detects cloud mode automatically. The team quota is 6 images per minute; the coordinator waits and retries when it is busy.
+- **On-device (without a key, or with `POCKETGRID_IMAGE_GENERATOR=local`):** each laptop runs Tiny-SD, downloaded by `./scripts/setup-worker.sh`. Section 1 works this way out of the box.
+
 ## 7. Optional: AI planner
 
 By default the coordinator queues work directly. To have a Strands agent choose devices, set one mode in `.env` and restart the coordinator:

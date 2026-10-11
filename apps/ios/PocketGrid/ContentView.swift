@@ -315,7 +315,7 @@ private struct JobCard: View {
             Text(job.prompt).font(.headline)
             Text(job.statusLabel).font(.caption.weight(.medium)).foregroundStyle(GridStyle.muted)
             JobProgressView(job: job)
-            ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant, verified: item.verified) }
+            ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant, verified: item.verified, cloud: item.generated_in == "cloud") }
             if let receipt = job.receipt {
                 DisclosureGroup("Receipt · \(receipt.total_charged) credits") {
                     VStack(spacing: 10) {
@@ -396,6 +396,7 @@ private struct ProtectedImage: View {
     let stage: String
     let variant: Int
     let verified: Bool?
+    var cloud = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var image: UIImage?
     @State private var failed = false
@@ -411,7 +412,7 @@ private struct ProtectedImage: View {
                 }.buttonStyle(.bordered).controlSize(.large)
             } else if failed { Label("Image unavailable", systemImage: "photo.badge.exclamationmark") }
             else { ProgressView() }
-            Text("Image \(variant + 1) · \(stageLabel)").font(.caption).foregroundStyle(GridStyle.muted)
+            Text("Image \(variant + 1) · \(stageLabel)" + (cloud ? " · Cloud-generated" : "")).font(.caption).foregroundStyle(GridStyle.muted)
         }.task(id: path) {
             do { image = UIImage(data: try await grid.image(path)); failed = image == nil }
             catch { failed = true }
