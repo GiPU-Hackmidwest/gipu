@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import os
 import secrets
 import threading
@@ -13,11 +14,11 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import agent, cloud_images
+from . import agent, cloud_images, payments
 from .store import Store
 
 
@@ -98,6 +99,10 @@ class Completion(Strict):
     lease_id: str
     png_base64: str = Field(max_length=4_000_000)
     metrics: dict = Field(default_factory=dict)
+
+
+class Checkout(Strict):
+    pack: Literal['starter','standard','large']
 
 
 class CloudImage(Strict):
@@ -238,6 +243,7 @@ def create_app(data_dir=None):
         result = store.snapshot(user['id'])
         result['agent'] = agent.status()
         result['generation'] = cloud_images.status()
+        result['payments'] = payments.status()
         return result
 
     @app.get('/api/leaderboard')
@@ -247,6 +253,70 @@ def create_app(data_dir=None):
     @app.patch('/api/leaderboard/profile')
     def leaderboard_profile(body: LeaderboardProfile, user=Depends(owner)):
         return store.leaderboard_profile(user['id'], body.enabled, body.nickname)
+
+    def public_base(request: Request) -> str:
+        # Caddy keeps the Host header and sets X-Forwarded-Proto, so this is the public https address.
+        return os.getenv('POCKETGRID_PUBLIC_URL', '').rstrip('/') or str(request.base_url).rstrip('/')
+
+    def settle(session_id: str):
+        try:
+            return store.settle_purchase(payments.retrieve_checkout(session_id))
+        except payments.PaymentsUnavailable as error:
+            raise HTTPException(503,str(error))
+
+    @app.get('/api/credits/packs')
+    def credit_packs():
+        return payments.status()
+
+    @app.post('/api/credits/checkout')
+    def checkout(body: Checkout,request: Request,user=Depends(owner)):
+        base = public_base(request)
+        try:
+            session = payments.create_checkout(user['id'],body.pack,
+                                               f'{base}/api/credits/return?session_id={{CHECKOUT_SESSION_ID}}',
+                                               f'{base}/api/credits/return?cancelled=1',secrets.token_hex(16))
+        except payments.PaymentsUnavailable as error:
+            raise HTTPException(503,str(error))
+        pack = payments.PACKS[body.pack]
+        store.record_checkout(user['id'],session['id'],body.pack,pack['credits'],pack['amount'],payments.CURRENCY)
+        return {'session_id':session['id'],'url':session['url']}
+
+    @app.get('/api/credits/checkout/{session_id}')
+    def checkout_status(session_id: str,user=Depends(owner)):
+        purchase = store.purchase(session_id,user['id'])
+        if purchase['status'] == 'paid':
+            return {'status':'paid','credits':purchase['credits']}
+        result = settle(session_id)
+        return {'status':result['status'],'credits':result['credits']}
+
+    @app.get('/api/credits/return',response_class=HTMLResponse)
+    def checkout_return(session_id: str = '',cancelled: str = ''):
+        # Stripe's redirect target. Credits come only from Stripe's own session record.
+        message = 'Payment cancelled. No credits were added.'
+        if session_id and not cancelled:
+            try:
+                result = settle(session_id)
+                message = (f"Payment received. {result['credits']} credits added to your GiPU balance."
+                           if result['status'] == 'paid' else 'Payment not completed yet. Your balance updates when it is.')
+            except HTTPException:
+                message = 'We could not confirm this payment. Your balance updates once it is confirmed.'
+        return ('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">'
+                '<title>GiPU</title><body style="font:16px system-ui;max-width:32rem;margin:15vh auto;padding:0 1rem;color:#1c1e21">'
+                f'<h1>GiPU</h1><p>{message}</p><p>You can close this page and return to GiPU.</p>'
+                '<p style="color:#606770">Test-mode payment. Credits are for GiPU image requests and cannot be cashed out.</p>')
+
+    @app.post('/api/stripe/webhook')
+    async def stripe_webhook(request: Request):
+        payload = await request.body()
+        if not payments.verify_webhook(payload,request.headers.get('stripe-signature','')):
+            raise HTTPException(400,'Invalid signature')
+        event = json.loads(payload)
+        if event.get('type') in ('checkout.session.completed','checkout.session.async_payment_succeeded'):
+            try:
+                await asyncio.to_thread(store.settle_purchase,event['data']['object'])
+            except HTTPException:
+                pass  # Not a checkout this coordinator created.
+        return {'received':True}
 
     @app.post('/api/devices')
     def register(body: DeviceRegistration,user=Depends(owner)):

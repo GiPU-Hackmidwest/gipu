@@ -89,6 +89,8 @@ class Store:
             CREATE TABLE IF NOT EXISTS cloud_outputs(task_id TEXT PRIMARY KEY,model TEXT,created_at REAL);
             CREATE TABLE IF NOT EXISTS leaderboard_profiles(user_id TEXT PRIMARY KEY,enabled INTEGER NOT NULL DEFAULT 0,nickname TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS leaderboard_availability(user_id TEXT,week_start REAL,seconds REAL NOT NULL DEFAULT 0,PRIMARY KEY(user_id,week_start));
+
+            CREATE TABLE IF NOT EXISTS purchases(session_id TEXT PRIMARY KEY,user_id TEXT,pack TEXT,credits INTEGER,amount INTEGER,currency TEXT,status TEXT,created_at REAL,settled_at REAL);
             CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status,kind);
             CREATE INDEX IF NOT EXISTS tasks_job ON tasks(job_id);
             CREATE INDEX IF NOT EXISTS sessions_user ON user_sessions(user_id);
@@ -641,6 +643,43 @@ class Store:
         with self.tx() as db:
             db.execute('INSERT OR REPLACE INTO cloud_outputs VALUES(?,?,?)', (task_id, model, self.clock()))
 
+    def record_checkout(self, user_id, session_id, pack, credits, amount, currency):
+        with self.tx() as db:
+            db.execute("INSERT INTO purchases VALUES(?,?,?,?,?,?,'pending',?,NULL)",
+                       (session_id, user_id, pack, credits, amount, currency, self.clock()))
+
+    def purchase(self, session_id, user_id=None):
+        with self.tx() as db:
+            row = db.execute('SELECT * FROM purchases WHERE session_id=?', (session_id,)).fetchone()
+        if not row or (user_id and row['user_id'] != user_id):
+            fail(404, 'Purchase not found')
+        return dict(row)
+
+    def settle_purchase(self, session):
+        """Grant credits once for a paid Stripe Checkout session this coordinator created.
+
+        Money only flows in: credits are added to the balance and ledger, and nothing
+        in the system converts them back to money."""
+        with self.tx() as db:
+            row = db.execute('SELECT * FROM purchases WHERE session_id=?', (session.get('id'),)).fetchone()
+            if not row:
+                fail(404, 'Purchase not found')
+            if row['status'] == 'paid':
+                return {'status': 'paid', 'credits': row['credits'], 'duplicate': True}
+            matches = (session.get('payment_status') == 'paid' and session.get('livemode') is False
+                       and session.get('client_reference_id') == row['user_id']
+                       and session.get('amount_total') == row['amount'] and session.get('currency') == row['currency'])
+            if not matches:
+                return {'status': row['status'], 'credits': row['credits'], 'duplicate': False}
+            if db.execute("UPDATE purchases SET status='paid',settled_at=? WHERE session_id=? AND status='pending'",
+                          (self.clock(), row['session_id'])).rowcount != 1:
+                return {'status': 'paid', 'credits': row['credits'], 'duplicate': True}
+            db.execute('UPDATE users SET balance=balance+? WHERE id=?', (row['credits'], row['user_id']))
+            self.ledger(db, row['user_id'], None, 'purchase', row['credits'],
+                        f"Bought {row['credits']} credits (test-mode card payment); credits cannot be cashed out")
+            self.event(db, 'credits_purchased', 'Credits added from a test-mode card payment', row['user_id'])
+            return {'status': 'paid', 'credits': row['credits'], 'duplicate': False}
+
     def live_task(self, db, task_id, device_id, lease_id):
         self.sweep(db)
         row = db.execute('SELECT * FROM tasks WHERE id=?', (task_id,)).fetchone()
@@ -873,6 +912,7 @@ class Store:
             'job_completed': 'Images ready. Contributors paid; unused credits returned.',
             'job_failed': 'Request could not finish; unused credits returned',
             'job_cancelled': 'Cancelled; unfinished work refunded',
+            'credits_purchased': 'Credits added from a test-mode card payment',
         }
         events = []
         for row in db.execute('SELECT * FROM events WHERE user_id=? OR job_id IN (SELECT id FROM jobs WHERE owner_id=?) ORDER BY id DESC LIMIT 60', (user_id, user_id)):

@@ -37,7 +37,7 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
-### 2026-10-11 · Codex · weekly leaderboard (`feat/weekly-leaderboard`, review)
+### 2026-10-11 · Codex · weekly leaderboard (PR #37, `feat/weekly-leaderboard`, review)
 
 - **Coordination:** Arboy explicitly requested implementing and merging a leaderboard with availability, credits used and participation metrics. This authorizes the focused coordinator/protocol/test changes alongside Mac/shared React and native iOS. No Android adapter or release-workflow change.
 - **Behavior:** membership off by default, separate public nickname, no private identity/device/job disclosure. Monday UTC rankings use accepted work for other accounts, net settled credits and prospective sharing time counted once across overlapping devices. Self-payments, grants, reservations and refunds cannot farm circulation points. Three personal goals navigate without enabling sharing; points do not mint credits.
@@ -45,7 +45,23 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 - **Verified:** coordinator 112 tests; frontend 83 tests and production build; Mac Tauri debug app bundle 29.84 MiB; complete iOS SwiftUI typecheck and leaderboard/lifecycle/privacy harnesses; host Xcode simulator build/run (iPhone 17 Pro Max, iOS 26.2). Additive DB startup preserved existing accounts/credits/sessions. Real local HTTP sharing counted 6 seconds, then stayed at 6 during 4 seconds after Pause. Browser UI Join/Leave immediately restored/removed the public row while preserving private progress; availability ranking matched server totals. Desktop and 320 px layouts inspected (320 px scroll width = viewport); console warnings/errors empty. Fixture images/work were controlled protocol inputs, not live inference or physical-device measurements.
 - **Native limits:** Xcode app runs paused, but individual simulator tabs have no reachable accessibility targets and coordinate operations fail `noWindowsAvailable`; native leaderboard interactions remain pending. Worktree Mac package builds but its launched window was blank while the existing main package renders normally; verification from the synced primary checkout is pending. No physical phone check claimed.
 - **Handoff:** deploy coordinator first (two additive tables; no balance changes), then updated clients. Existing coordinator shows an unavailable message until updated. Preserve volume and `.env`, back up before switching, never `down -v`. Root SSH access now verified with the existing identity; zero active hosted jobs/tasks observed before rollout. Installer workflow remains manual; no Actions run requested here.
+- **Integration:** resolved overlap with teammate PR #38 (test-mode credit purchases), preserving Account payments, purchase routes/table and weekly metrics. Purchase grants do not count as credits used; only settled task payments/fees do.
 - **Open questions:** none on the metric/privacy contract. Full native UI and hosted rollout evidence will be appended after merge.
+
+### 2026-10-11 · Claude · buy credits with a card (Stripe test mode, branch `feat/buy-credits`)
+
+- **Why:** FinTech challenge. Sithabo asked for a money → credits pipeline only; credits must never convert back to money.
+- **Coordinator:**
+  - `payments.py` talks to Stripe's REST API with `httpx` (no new dependency). Fixed packs: 50/$5, 120/$10, 300/$20. Accepts `sk_test_` keys only and refuses live keys. Verifies webhook signatures (HMAC-SHA256, 5-minute tolerance).
+  - New `purchases` table. `settle_purchase` grants credits once, and only when Stripe reports paid, not livemode, and the same user/amount/currency the coordinator recorded. It writes a `purchase` ledger entry and a `credits_purchased` event.
+  - Routes: GET `/api/credits/packs`, POST `/api/credits/checkout`, GET `/api/credits/checkout/{id}` (own only), GET `/api/credits/return` (Stripe redirect page), POST `/api/stripe/webhook`. `/state.payments`.
+  - There is no payout, withdrawal or card-refund route, and a test asserts that.
+- **Clients:** a new Buy credits card on the Account page (`BuyCredits.tsx`). It opens Checkout in the system browser via `tauri-plugin-opener` (new dependency, scoped to `https://checkout.stripe.com/*`), or in a new tab on the web, then polls the coordinator until Stripe confirms. iPhone is not included: Apple's rules disallow outside payment for digital credits in iOS apps.
+- **Docs:** protocol, README, `deploy/.env.example` and compose (empty Stripe variable names only).
+- **Verification:**
+  - Coordinator: 96 passed, including 6 new tests in `tests/test_payments.py` against a fake Stripe API: the paid flow, credits granted exactly once, unpaid/wrong amount/currency/user/livemode never credited, other accounts get 404, fixed packs, signed and replayed webhooks, refusal of live keys, and no cash-out route.
+  - Web: 83 tests, `tsc -b` and build passed. Rust: `cargo check` passed with the opener plugin.
+  - **Not verified:** a real Stripe test-mode checkout (no `sk_test_` key exists yet, locally or on the server), and opening Checkout from the Mac/Android apps.
 
 ### 2026-10-11 · Claude · hosted deploy of `aace226` and releases v0.2.0 / v0.3.0
 
