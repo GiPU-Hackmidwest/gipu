@@ -49,12 +49,12 @@ brand/tools/export_pngs.sh   # macOS; renders PNGs with AppKit to keep transpare
 
 ## App icons
 
-`apps/web/src-tauri/icons/` and the Android launcher icons in `apps/web/src-tauri/gen/android/app/src/main/res/` are generated from this folder. Do not edit them by hand. After exporting PNGs, run this from a checkout with `apps/web/node_modules` installed:
+`apps/web/src-tauri/icons/`, the Android launcher icons in `apps/web/src-tauri/gen/android/app/src/main/res/` and the web favicons in `apps/web/public/` are generated from this folder. Do not edit them by hand. After exporting PNGs, run this from a checkout with `apps/web/node_modules` installed:
 
 ```sh
 brand/tools/update_app_icons.sh
 ```
 
-It runs `tauri icon` with `tauri-icon.json` (iOS, Windows tiles and the Android adaptive and monochrome layers). It then replaces the desktop set (`icon.icns`, `icon.ico`, `icon.png` and the sized PNGs) with the macOS tile, since macOS applies no mask, and draws the Android 7 legacy icons with their own padding. Re-running it gives identical images; `icon.icns` may still differ byte-for-byte because of how it is packed.
+It runs `tauri icon` with `tauri-icon.json` (iOS, Windows tiles and the Android adaptive and monochrome layers). It then replaces the desktop set (`icon.icns`, `icon.ico`, `icon.png` and the sized PNGs) with the macOS tile, since macOS applies no mask, draws the Android 7 legacy icons with their own padding, and copies the favicons (SVG, a 32px PNG fallback and the 180px Apple touch icon). Re-running it gives identical images; `icon.icns` may still differ byte-for-byte because of how it is packed.
 
 The native iOS app in `apps/ios` has no icon set yet; it is not generated here.

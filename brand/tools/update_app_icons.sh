@@ -1,5 +1,5 @@
 #!/bin/sh
-# Regenerate the Tauri desktop, Windows, iOS and Android app icons from brand/ (macOS only).
+# Regenerate the Tauri desktop, Windows, iOS and Android app icons and the web favicons from brand/ (macOS only).
 # Run export_pngs.sh first if any SVG master changed.
 set -e
 BRAND="$(cd "$(dirname "$0")/.." && pwd)"
@@ -24,3 +24,7 @@ for p in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
   "$BIN" "$BRAND/android/ic_launcher_legacy.svg" "$RES/mipmap-${p%:*}/ic_launcher.png" "${p#*:}"
   "$BIN" "$BRAND/android/ic_launcher_round.svg" "$RES/mipmap-${p%:*}/ic_launcher_round.png" "${p#*:}"
 done
+# Web favicons, served from apps/web/public.
+cp "$BRAND/gipu-favicon.svg" "$WEB/public/favicon.svg"
+cp "$BRAND/png/gipu-favicon-32.png" "$WEB/public/favicon-32.png"
+cp "$BRAND/png/apple-touch-icon-180.png" "$WEB/public/apple-touch-icon.png"
