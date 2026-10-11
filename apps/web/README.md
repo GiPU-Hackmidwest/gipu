@@ -25,13 +25,19 @@ npm run tauri build
 
 The release `.app` is placed under `src-tauri/target/release/bundle/macos`. This is an unsigned developer prototype, not a notarized distribution. The Mac app uses the same React client and a minimal Rust/Tauri host with the official notification plugin and user-triggered clipboard writing for device pairing. Set the coordinator URL to `http://127.0.0.1:8787` (or your grid host). Server CORS must allow the Tauri origin (`tauri://localhost` on macOS).
 
-Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect installed worker** under Devices. The app finds its build checkout by default; **Installed worker settings** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
+### Bundled worker build
+
+`npm run build:desktop` (`scripts/build-desktop-app.sh`, needs `uv`) freezes the Python worker with PyInstaller into `src-tauri/resources/worker/`, builds the app with `tauri.bundled-worker.conf.json`, which ships that folder as an app resource, then restores the symlinks Tauri expands so PyTorch is not stored twice. The app is about 650 MB, mostly PyTorch. Model weights are not bundled: on first use, **Download image model** fetches the pinned Tiny-SD revision (about 1 GB) from Hugging Face into PocketGrid's app data, shows progress and can be cancelled. A successful download writes a ready marker only after the worker loads the model once. Connect then runs the bundled worker with `--local-only` and that cache; it still never downloads anything. The frozen worker is built for the machine's own platform and architecture, and is not yet code-signed or notarized.
+
+### Checkout worker (development)
+
+Builds without the bundled worker (`npm run tauri dev`, `npm run tauri build`) keep the prepared-checkout flow below. Prepare the Python environment and cache Tiny-SD once using [the worker setup](../../workers/python/README.md). Then join the grid in the Mac app and use **Connect installed worker** under Devices. The app finds its build checkout by default; **Installed worker settings** accepts another prepared PocketGrid folder and lets you choose Automatic, Apple GPU or CPU.
 
 Connect explicitly starts one local Python process, loads the cached model and registers it **paused** under the current account. It never installs packages or downloads models. Once connected, set CPU threads, image size and session duration on **This Mac image worker**, then press **Start sharing**. Connecting consumes model memory even while paused. CPU thread limits are not GPU percentage or RAM quotas.
 
 **Pause** stops accepting work and cancels active inference at a denoising boundary, while keeping the model loaded. **Disconnect worker**, **Leave**, reloading the interface or closing/quitting the app stops the managed process. Disconnect also asks the coordinator to pause the device; if the network is unavailable, its unfinished lease expires. Reconnecting always pauses the device again before it can claim work. A sharing session may continue while the Mac app is in the background, within the chosen limits; the canvas exporter still pauses when hidden.
 
-This is a prepared-checkout prototype, not a bundled worker installer. The app passes the account token through the child's environment, never a command argument or clipboard. It stores a separate private worker identity per coordinator origin and session under app data. Existing command-line workers remain independent and are not stopped by the app. For manual pairing, use **Copy worker pairing token** and `POCKETGRID_SESSION_TOKEN`; a matching display name alone is not account linking.
+In both modes the app passes the account token through the child's environment, never a command argument or clipboard. It stores a separate private worker identity per coordinator origin and session under app data. Existing command-line workers remain independent and are not stopped by the app. For manual pairing, use **Copy worker pairing token** and `POCKETGRID_SESSION_TOKEN`; a matching display name alone is not account linking.
 
 ## Behavior and security
 
