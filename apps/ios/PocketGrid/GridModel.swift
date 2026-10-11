@@ -363,12 +363,12 @@ final class GridModel: ObservableObject {
             let data = try await api.data(source, token: deviceToken)
             try Task.checkCancellation()
             guard contributionGate.permits(generation, foreground: foreground) else { throw CancellationError() }
-            progress = 0.3; stage = "Applying export frame locally"
+            progress = 0.3; stage = "Finishing image"
             _ = try await api.data("/api/tasks/\(task.id)/progress", token: deviceToken, method: "POST",
                                    body: ["lease_id": lease, "progress": progress, "stage": stage])
             try Task.checkCancellation()
             guard contributionGate.permits(generation, foreground: foreground) else { throw CancellationError() }
-            let render = Task.detached(priority: .utility) { try ImageProcessor.finalize(data, maxPixels: maxPixels) }
+            let render = Task.detached(priority: .utility) { try ImageProcessor.finalizeInvisible(data, maxPixels: maxPixels) }
             renderTask = render
             let result = try await withTaskCancellationHandler(operation: { try await render.value }, onCancel: { render.cancel() })
             try Task.checkCancellation()
@@ -376,7 +376,7 @@ final class GridModel: ObservableObject {
             progress = 0.85; stage = "Submitting finished image"
             _ = try await api.data("/api/tasks/\(task.id)/complete", token: deviceToken, method: "POST",
                                    body: ["lease_id": lease, "png_base64": result.base64EncodedString(),
-                                          "metrics": ["backend": "Swift/CoreGraphics", "elapsed_seconds": Date().timeIntervalSince(start)]])
+                                          "metrics": ["backend": "Swift/ImageIO", "elapsed_seconds": Date().timeIntervalSince(start)]])
             try Task.checkCancellation()
             guard generation == contributionGate.generation else { return }
             notice = "Image finished on this phone. Accepted work earns \(task.price) sandbox credit(s)."

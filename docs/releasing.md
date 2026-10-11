@@ -1,0 +1,61 @@
+# Releasing GiPU locally
+
+Build on your own computer, then upload the installers manually. No GitHub Actions, paid runners or repository signing secrets are needed. iPhone installs through Xcode; see the README.
+
+## Mac installer
+
+On an Apple silicon Mac, follow the README prerequisites, then run from the repository root:
+
+```bash
+export VITE_DEFAULT_COORDINATOR=https://66-228-53-243.ip.linodeusercontent.com
+npm --prefix apps/web ci
+./scripts/build-desktop-app.sh --config '{"version":"0.2.0"}'
+mkdir -p dist
+stage="$(mktemp -d)"
+ditto apps/web/src-tauri/target/release/bundle/macos/GiPU.app "$stage/GiPU.app"
+ln -s /Applications "$stage/Applications"
+hdiutil create -volname GiPU -srcfolder "$stage" -ov -format UDZO dist/GiPU-0.2.0-macos-arm64.dmg
+hdiutil verify dist/GiPU-0.2.0-macos-arm64.dmg
+```
+
+The app includes its worker; the model downloads only after the user asks. These paths assume the default Cargo target directory; if you set `CARGO_TARGET_DIR`, use the bundle path printed by the build instead. The temporary staging directory can be removed after verification.
+
+## Android installer
+
+For team testing, use the README's debug APK instructions. To make a release APK, install the Android prerequisites and JDK 17, then create a signing key once:
+
+```bash
+./scripts/android-release-key.sh
+```
+
+This keeps the key and a backup of its settings in `~/.gipu-release/` with owner-only permissions, and writes the gitignored `apps/web/src-tauri/gen/android/keystore.properties`. It refuses to overwrite existing signing files and uploads nothing. Back up the key privately: Android updates require the same key.
+
+```bash
+export VITE_DEFAULT_COORDINATOR=https://66-228-53-243.ip.linodeusercontent.com
+cd apps/web
+npm ci
+npm run tauri android build -- --target aarch64 --apk --config '{"version":"0.2.0"}'
+```
+
+Use the APK path printed by Tauri. Copy it to the repository's `dist/` as `GiPU-0.2.0-android-arm64.apk`. Without local signing settings, a release APK is unsigned and cannot be installed. Debug APKs are for testing; they are debuggable and allow HTTP. Debug and release APKs use different keys and cannot update each other.
+
+## Share a release
+
+Test both installers first. Keep signing keys, settings and user data out of the upload. Generate checksums for the files you intend to share:
+
+```bash
+cd dist
+shasum -a 256 GiPU-0.2.0-macos-arm64.dmg GiPU-0.2.0-android-arm64.apk > SHA256SUMS.txt
+```
+
+On the repository's **Releases → Draft a new release** page, select the reviewed main commit, create a version tag such as `v0.2.0`, and attach the DMG, APK and checksum file. Save as a draft, review, then publish when the team is ready. Creating a tag does not start a build.
+
+The repository is private, so downloads are available to people with repository access. For a team demo, installers can also be shared directly.
+
+## Installation limits
+
+- Mac builds are not Developer ID signed or notarized. macOS may block first launch; users must explicitly allow the app in System Settings → Privacy & Security. Signing and notarization require an Apple Developer account.
+- Android sideloading requires allowing installation from the app used to open the APK. Google Play is not required.
+- Release Android builds require an HTTPS grid address. Use a compatible deployed coordinator; building installers does not deploy it.
+
+Actual build and device evidence is recorded in [v1-progress.md](v1-progress.md).

@@ -17,7 +17,7 @@ Clicking Generate does not enable contribution. Joining does not enable contribu
 
 ## Actual workload today
 
-The only implemented compute pipeline is text-to-image generation followed by a deterministic image export step. A Python laptop worker generates a whole image with a locally installed diffusion model. A phone, browser or Python finalizer applies a four-pixel teal border and exports a PNG. The coordinator validates the border and unchanged interior pixels.
+The only implemented compute pipeline is text-to-image generation followed by a deterministic image export step. A Python laptop worker generates a whole image with a locally installed diffusion model. A phone, browser or Python finalizer exports it again as a lossless PNG with identical pixels; nothing is drawn on it. The coordinator checks every pixel, and during rollout still accepts the older four-pixel teal border from apps that have not updated.
 
 This is task distribution, not model sharding. Four requested images create four independent generation tasks. Multiple laptops can process different images. A single image's neural network is not partitioned across laptops and phones. A lost generation restarts that image on a compatible worker; no diffusion checkpoint transfer exists.
 

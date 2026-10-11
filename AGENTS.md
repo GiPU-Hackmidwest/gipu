@@ -34,7 +34,7 @@ Also: **C1** iOS distribution (TestFlight if an Apple account is available; othe
 
 ### What Claude is doing
 
-Claude's tasks are listed in CLAUDE.md and v1-plan.md: the contract PR, `user_sessions`/link-code/login auth, server-side privacy scoping, `grid` counts, the invisible finalize across coordinator/Python/browser, Android scanner/storage/notifications, Tauri/Android icons and names, README, and GitHub release builds. Their results and handoffs appear in docs/v1-progress.md.
+Claude's tasks are listed in CLAUDE.md and v1-plan.md: the contract PR, `user_sessions`/link-code/login auth, server-side privacy scoping, `grid` counts, the invisible finalize across coordinator/Python/browser, Android scanner/storage/notifications, Tauri/Android icons and names, README, and local builds for GitHub Releases. Their results and handoffs appear in docs/v1-progress.md.
 
 ### File boundaries
 
@@ -54,3 +54,7 @@ Codex owns `App.tsx`, `DesktopWorkerPanel.tsx`, `GridScene.tsx`, `style.css`, ne
 - Do not replace the working Tiny-SD path until a replacement has measured results and a fallback.
 - Run checks relevant to changed behavior. Record actual measurements and hardware; do not present vendor timings as local results.
 - Do not commit personal Xcode signing changes as required project defaults.
+
+## Release cost constraint
+
+Build installers locally. Do not add GitHub-hosted Actions, automatic tag/PR builds or repository signing-secret uploads unless Arboy explicitly requests them. GitHub Releases may hold manually uploaded installers; that does not require Actions.

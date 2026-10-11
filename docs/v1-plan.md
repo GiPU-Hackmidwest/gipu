@@ -74,3 +74,5 @@ Scanning an invite QR alone would create a new account every time and lose credi
 - Bundle identifiers (`dev.pocketgrid.*`), the repository name and `POCKETGRID_*` environment variables stay unchanged, so installed apps, signing and deployment keep working. Only user-visible names change to GiPU.
 - Explicit opt-in still applies: turning on **Create images** or **Finish images** is the explicit Start. The first-time 1 GB model download still asks first. Pause, session expiry, lease fencing and exactly-once settlement are unchanged.
 - Mobile background contribution is still not assumed. Finishing on phones is foreground-only.
+
+- Release builds run locally per Arboy’s cost constraint. GitHub Releases can host manually uploaded installers; no GitHub Actions workflow or repository signing secrets are required.
