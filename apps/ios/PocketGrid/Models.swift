@@ -28,10 +28,16 @@ struct JobImage: Decodable, Identifiable {
 struct Receipt: Decodable {
     let budget: Int; let contributor_total: Int; let platform_fee: Int; let refund: Int; let total_charged: Int
 }
+struct JobPlanning: Decodable { let status: String? }
+struct JobPlan: Decodable {
+    let planning: JobPlanning?
+}
 struct GridJob: Decodable, Identifiable {
     let id: String; let owner_id: String; let prompt: String; let status: String; let budget: Int
     let spent: Int; let refunded: Int; let tasks: [GridTask]; let images: [JobImage]; let receipt: Receipt?
     let count: Int?
+    let reserved: Int?
+    let plan: JobPlan?
 }
 struct GridEvent: Decodable, Identifiable {
     let id: Int; let kind: String; let message: String; let created_at: Double; let device_id: String?
@@ -55,11 +61,12 @@ struct Snapshot: Decodable {
 /// Describes observed queue capacity, not a guarantee of the next assignment.
 /// The server also enforces routing preferences and retry exclusions.
 enum JobStageState: Equatable {
-    case running, complete, waitingForGeneration, ready, busy, unavailable, unknown, stopped
+    case planning, running, complete, waitingForGeneration, ready, busy, unavailable, unknown, stopped
 
     func message(for kind: String) -> String {
         let generation = kind == "image_generate"
         switch self {
+        case .planning: return "Device selection is being planned. No image work is queued yet."
         case .running: return generation ? "Generating on a participating laptop." : "A participating device is finishing the export."
         case .complete: return generation ? "Image generation is complete." : "Finished images are ready."
         case .waitingForGeneration: return "Finishing starts when a generated image is ready."
@@ -73,11 +80,68 @@ enum JobStageState: Equatable {
 }
 
 extension GridJob {
-    var isActive: Bool { ["queued", "running"].contains(status) }
+    var isPlanning: Bool { status == "planning" }
+    var isActive: Bool { ["planning", "queued", "running"].contains(status) }
+    var reservedCredits: Int { max(0, reserved ?? (budget - spent - refunded)) }
+    // Empty tasks alone do not establish a planning failure on older servers.
+    var failedDuringPlanning: Bool {
+        status == "failed" && plan?.planning?.status == "failed"
+    }
+    var cancelledDuringPlanning: Bool {
+        status == "cancelled" && tasks.isEmpty && plan?.planning != nil && plan?.planning?.status != "done"
+    }
+    var statusLabel: String {
+        if failedDuringPlanning { return "Planning failed" }
+        if cancelledDuringPlanning { return "Planning cancelled" }
+        return status.capitalized
+    }
+    var planningMessage: String {
+        let action = plan?.planning?.status == "running"
+            ? "Strands is choosing compatible devices."
+            : "Waiting for Strands to plan this request."
+        return "\(action) No image work is queued yet. \(reservedCredits) credits are reserved. You can cancel while planning."
+    }
+    var planningTitle: String {
+        plan?.planning?.status == "pending" ? "Waiting for the planner" : "Planning your request"
+    }
+    var fullRefundConfirmed: Bool {
+        guard let receipt else { return false }
+        return receipt.budget == budget && receipt.contributor_total == 0 && receipt.platform_fee == 0
+            && receipt.refund == budget && receipt.total_charged == 0
+    }
+    var terminalSummary: String? {
+        let outcome: String
+        switch status {
+        case "failed" where failedDuringPlanning:
+            outcome = tasks.isEmpty ? "Planning failed before image work was queued." : "Planning did not complete."
+        case "failed":
+            outcome = "Image processing did not complete."
+        case "cancelled" where cancelledDuringPlanning:
+            outcome = "Cancelled before image work was queued."
+        case "cancelled":
+            outcome = "Request cancelled. Previously accepted work remains paid."
+        default: return nil
+        }
+        // Display settled accounting, rather than promising a full refund for
+        // an execution failure that may already have paid contributors.
+        if fullRefundConfirmed { return "\(outcome) Your full budget of \(budget) credits was returned." }
+        return "\(outcome) \(receipt?.refund ?? refunded) credits returned. Check the receipt for charges."
+    }
+    var submissionAcknowledgement: String {
+        switch status {
+        case "planning": return "Request saved with \(reservedCredits) credits reserved. Follow planning below."
+        case "queued": return "Request saved and queued with \(reservedCredits) credits reserved."
+        case "running": return "Request saved. Image processing is underway; follow its progress below."
+        case "completed": return "Request completed. Its images and receipt are below."
+        case "failed", "cancelled": return terminalSummary ?? "Check the request status below."
+        default: return "Request saved. Follow its status below."
+        }
+    }
     var imageCount: Int { count ?? Set(tasks.filter { $0.kind == "image_generate" }.map(\.variant)).count }
     func completedCount(_ kind: String) -> Int { tasks.filter { $0.kind == kind && $0.status == "completed" }.count }
 
     func stageState(_ kind: String, devices: [Device], serverTime: Double?) -> JobStageState {
+        if isPlanning { return .planning }
         let stageTasks = tasks.filter { $0.kind == kind }
         if imageCount > 0 && completedCount(kind) == imageCount { return .complete }
         if ["completed", "cancelled", "failed"].contains(status) { return .stopped }
@@ -103,7 +167,7 @@ extension GridJob {
     }
 
     func canStartFinishing(on device: Device?, limits: Limits) -> Bool {
-        guard isActive, let device, device.online, device.active_task_id == nil,
+        guard isActive, !isPlanning, let device, device.online, device.active_task_id == nil,
               device.capabilities?.contains("image_finalize") == true else { return false }
         return tasks.contains { $0.kind == "image_finalize" && $0.status == "queued" && $0.width * $0.height <= limits.max_pixels }
     }
@@ -117,6 +181,52 @@ extension GridJob {
             return variants.first
         }
         return selected.sorted { $0.variant < $1.variant }
+    }
+}
+
+/// Keep an acknowledged job visible and cancellable even when the following
+/// snapshot fails. A snapshot started before that acknowledgment cannot erase it.
+struct AcknowledgedJobs {
+    private(set) var jobs: [GridJob] = []
+    private(set) var revision = 0
+
+    mutating func retain(_ job: GridJob) {
+        jobs.removeAll { $0.id == job.id }
+        jobs.insert(job, at: 0)
+        revision += 1
+    }
+    mutating func reconcile(_ snapshot: [GridJob], requestedAt revision: Int) {
+        guard revision == self.revision else { return }
+        let confirmed = Set(snapshot.map(\.id))
+        jobs.removeAll { confirmed.contains($0.id) }
+    }
+    func merged(with snapshot: [GridJob]) -> [GridJob] {
+        let retained = Set(jobs.map(\.id))
+        return jobs + snapshot.filter { !retained.contains($0.id) }
+    }
+}
+
+struct SnapshotRequest {
+    let sequence: Int
+    let acknowledgmentRevision: Int
+}
+
+/// Fence the entire snapshot, including balances and jobs, after a newer
+/// acknowledgment or successfully applied response has made it obsolete.
+struct SnapshotGate {
+    private var issued = 0
+    private var applied = 0
+    mutating func begin(acknowledgmentRevision: Int) -> SnapshotRequest {
+        issued += 1
+        return SnapshotRequest(sequence: issued, acknowledgmentRevision: acknowledgmentRevision)
+    }
+    func isCurrent(_ request: SnapshotRequest, acknowledgmentRevision: Int) -> Bool {
+        request.sequence > applied && request.acknowledgmentRevision == acknowledgmentRevision
+    }
+    mutating func accept(_ request: SnapshotRequest, acknowledgmentRevision: Int) -> Bool {
+        guard isCurrent(request, acknowledgmentRevision: acknowledgmentRevision) else { return false }
+        applied = request.sequence
+        return true
     }
 }
 
@@ -139,7 +249,8 @@ struct GridAPI {
               let url = URL(string: path, relativeTo: base)?.absoluteURL,
               url.host == base.host, url.scheme == base.scheme, url.port == base.port else { throw APIError.invalidURL }
         var request = URLRequest(url: url)
-        // Agent planning may exceed the normal control-request timeout.
+        // Older coordinators plan synchronously; current ones acknowledge
+        // durable planning promptly. Keep compatibility with both contracts.
         request.timeoutInterval = (method == "POST" && path == "/api/jobs") ? 180 : 20
         request.httpMethod = method
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }

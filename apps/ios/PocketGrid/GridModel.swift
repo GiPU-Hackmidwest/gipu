@@ -37,6 +37,7 @@ final class GridModel: ObservableObject {
     @Published var joinCode = "pocketgrid-demo"
     @Published var connected = false
     @Published var busy = false
+    @Published private(set) var submitting = false
     @Published var error: String?
     @Published var notice: String?
     @Published var snapshot: Snapshot?
@@ -47,6 +48,7 @@ final class GridModel: ObservableObject {
     @Published var stage = "Paused"
     @Published var notificationStatus = "Off"
     @Published private(set) var contributionTransition = false
+    @Published private var acknowledgedJobs = AcknowledgedJobs()
 
     private var pendingSubmission: (signature: Data, id: String)?
     private var token = ""
@@ -60,9 +62,12 @@ final class GridModel: ObservableObject {
     private var didLoadEvents = false
     private var foreground = true
     private var contributionGate = ContributionGate()
+    private var snapshotGate = SnapshotGate()
     var api: GridAPI { GridAPI(server: server) }
     var ownDevice: Device? { snapshot?.devices.first { $0.id == deviceID } }
-    var ownJobs: [GridJob] { snapshot?.jobs.filter { $0.owner_id == snapshot?.user.id } ?? [] }
+    var ownJobs: [GridJob] {
+        acknowledgedJobs.merged(with: snapshot?.jobs.filter { $0.owner_id == snapshot?.user.id } ?? [])
+    }
 
     init() {
         guard let data = SessionStore.load(), let saved = try? JSONDecoder().decode(SavedSession.self, from: data) else { return }
@@ -95,14 +100,19 @@ final class GridModel: ObservableObject {
         } catch { self.error = error.localizedDescription }
     }
 
-    func refresh() async {
-        guard connected else { return }
+    @discardableResult
+    func refresh(reportError: Bool = true) async -> Bool {
+        guard connected else { return false }
         let generation = contributionGate.generation
         let sessionToken = token
+        let acknowledgmentRevision = acknowledgedJobs.revision
+        let request = snapshotGate.begin(acknowledgmentRevision: acknowledgmentRevision)
         do {
             let state = try await api.json(Snapshot.self, "/api/state", token: token)
-            guard !Task.isCancelled, generation == contributionGate.generation, sessionToken == token, connected else { return }
+            guard !Task.isCancelled, generation == contributionGate.generation, sessionToken == token, connected else { return false }
+            guard snapshotGate.accept(request, acknowledgmentRevision: acknowledgedJobs.revision) else { return true }
             snapshot = state
+            acknowledgedJobs.reconcile(state.jobs, requestedAt: acknowledgmentRevision)
             if sharing, let device = state.devices.first(where: { $0.id == deviceID }), !device.enabled {
                 stopLocalWork(); stage = "Session ended"
             }
@@ -113,8 +123,14 @@ final class GridModel: ObservableObject {
                 seenEvents.insert(event.id)
             }
             didLoadEvents = true
+            return true
         } catch {
-            if !Task.isCancelled { self.error = error.localizedDescription }
+            guard connected, sessionToken == token else { return false }
+            // An obsolete response is intentionally ignored, not a new status
+            // failure that should replace a successful submission acknowledgment.
+            guard snapshotGate.isCurrent(request, acknowledgmentRevision: acknowledgedJobs.revision) else { return true }
+            if reportError && !Task.isCancelled { self.error = error.localizedDescription }
+            return false
         }
     }
 
@@ -278,9 +294,9 @@ final class GridModel: ObservableObject {
 
     func submit(prompt: String, count: Int, budget: Int, useAgent: Bool) async {
         guard !busy else { return }
-        busy = true; error = nil
-        notice = useAgent ? "Strands is planning your request. This may take a couple of minutes." : nil
-        defer { busy = false }
+        busy = true; submitting = true; error = nil
+        notice = "Submitting request…"
+        let sessionToken = token
         do {
             var body: [String: Any] = ["prompt": prompt, "count": count, "width": 256, "height": 256,
                                       "steps": 12, "budget": budget, "use_agent": useAgent]
@@ -290,25 +306,42 @@ final class GridModel: ObservableObject {
                 pendingSubmission = (signature, UUID().uuidString)
             }
             body["request_id"] = pendingSubmission!.id
-            _ = try await api.json(GridJob.self, "/api/jobs", token: token, method: "POST", body: body)
+            let accepted = try await api.json(GridJob.self, "/api/jobs", token: token, method: "POST", body: body)
+            guard connected, token == sessionToken else { busy = false; submitting = false; return }
             pendingSubmission = nil
-            notice = "Request submitted. Capable laptops generate the image; phones can finish its export."
-            await refresh()
+            acknowledgedJobs.retain(accepted)
+            notice = accepted.submissionAcknowledgement
+            busy = false; submitting = false
         } catch {
+            busy = false; submitting = false
             notice = nil
             if (error as? URLError)?.code == .timedOut {
-                self.error = "Planning timed out. Check your jobs before retrying. Retrying unchanged inputs in this app session reuses the same request ID."
+                self.error = "The request acknowledgement timed out; the job may still be saved or running. Check your jobs before retrying. Retrying unchanged inputs in this app session reuses the same request ID."
             } else {
                 self.error = error.localizedDescription
             }
+            return
+        }
+        // This is separate from POST failure: a saved job must remain visible
+        // and cancellable if fetching the next snapshot is unavailable.
+        if !(await refresh(reportError: false)), connected, token == sessionToken, !Task.isCancelled {
+            error = "Request saved, but its latest status could not be refreshed. Its job card remains available. Pull to refresh."
         }
     }
 
     func cancel(_ job: GridJob) async {
+        let sessionToken = token
         do {
-            _ = try await api.data("/api/jobs/\(job.id)/cancel", token: token, method: "POST", body: [:])
-            await refresh()
-        } catch { self.error = error.localizedDescription }
+            let cancelled = try await api.json(GridJob.self, "/api/jobs/\(job.id)/cancel", token: sessionToken, method: "POST", body: [:])
+            guard connected, token == sessionToken else { return }
+            acknowledgedJobs.retain(cancelled)
+            notice = cancelled.terminalSummary
+            if !(await refresh(reportError: false)), connected, token == sessionToken, !Task.isCancelled {
+                error = "Cancellation acknowledged, but the latest grid status could not be refreshed. The saved receipt remains below."
+            }
+        } catch {
+            if connected, token == sessionToken, !Task.isCancelled { self.error = error.localizedDescription }
+        }
     }
 
     func image(_ path: String) async throws -> Data { try await api.data(path, token: token) }
@@ -333,6 +366,8 @@ final class GridModel: ObservableObject {
         pollTask?.cancel(); heartbeatTask?.cancel()
         SessionStore.save(nil)
         connected = false; snapshot = nil; token = ""; deviceToken = ""; deviceID = ""
+        acknowledgedJobs = AcknowledgedJobs()
+        snapshotGate = SnapshotGate()
         seenEvents = []; didLoadEvents = false; error = nil; notice = nil
     }
 }

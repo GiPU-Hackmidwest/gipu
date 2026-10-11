@@ -81,7 +81,7 @@ private struct CreateView: View {
                     Toggle("Plan with AWS Strands", isOn: $useAgent).disabled(grid.snapshot?.agent.available != true)
                     Text("\(grid.snapshot?.agent.mode ?? "Checking") agent mode").font(.caption).foregroundStyle(.secondary)
                     Button { Task { await grid.submit(prompt: prompt, count: count, budget: budget, useAgent: useAgent) } } label: {
-                        HStack { Text("Generate on the grid"); Spacer(); if grid.busy { ProgressView() } }
+                        HStack { Text(grid.submitting ? "Submitting request…" : "Generate on the grid"); Spacer(); if grid.submitting { ProgressView() } }
                     }.disabled(grid.busy || prompt.trimmingCharacters(in: .whitespaces).isEmpty)
                 } header: { Text("Make an image") } footer: {
                     Text("A participating laptop runs the image model. Phones finish exports. The whole budget is reserved; unused credits return when the job finishes or is cancelled.")
@@ -91,7 +91,7 @@ private struct CreateView: View {
                     Section {
                         VStack(alignment: .leading, spacing: 8) {
                             Text(job.prompt).font(.headline)
-                            Text(job.status.capitalized).foregroundStyle(.secondary)
+                            Text(job.statusLabel).foregroundStyle(.secondary)
                             JobProgressView(job: job)
                             ForEach(job.displayImages) { item in ProtectedImage(path: item.url, stage: item.stage, variant: item.variant) }
                             if let receipt = job.receipt {
@@ -99,7 +99,7 @@ private struct CreateView: View {
                             } else {
                                 Text("Budget \(job.budget) · spent \(job.spent) · refunded \(job.refunded)").font(.caption)
                             }
-                            if ["queued", "running"].contains(job.status) { Button("Cancel request", role: .destructive) { Task { await grid.cancel(job) } } }
+                            if job.isActive { Button("Cancel request", role: .destructive) { Task { await grid.cancel(job) } } }
                         }
                     }
                 }
@@ -116,13 +116,23 @@ private struct JobProgressView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            let generated = job.completedCount("image_generate")
-            let finished = job.completedCount("image_finalize")
-            ProgressView(value: Double(generated + finished), total: Double(max(1, job.imageCount * 2)))
-                .accessibilityLabel("Image processing steps")
-                .accessibilityValue("\(generated) of \(job.imageCount) generated, \(finished) of \(job.imageCount) finished")
-            stage("Generated", kind: "image_generate", completed: generated)
-            stage("Finished", kind: "image_finalize", completed: finished)
+            if job.isPlanning {
+                ProgressView(job.planningTitle)
+                Text(job.planningMessage).font(.subheadline).foregroundStyle(.secondary)
+            } else {
+                if let summary = job.terminalSummary {
+                    Text(summary).font(.subheadline).foregroundStyle(.secondary)
+                }
+                if !job.tasks.isEmpty {
+                    let generated = job.completedCount("image_generate")
+                    let finished = job.completedCount("image_finalize")
+                    ProgressView(value: Double(generated + finished), total: Double(max(1, job.imageCount * 2)))
+                        .accessibilityLabel("Image processing steps")
+                        .accessibilityValue("\(generated) of \(job.imageCount) generated, \(finished) of \(job.imageCount) finished")
+                    stage("Generated", kind: "image_generate", completed: generated)
+                    stage("Finished", kind: "image_finalize", completed: finished)
+                }
+            }
             if !grid.sharing && job.canStartFinishing(on: grid.ownDevice, limits: grid.limits) {
                 Text("This phone is paused and can help finish these images.").font(.subheadline)
                 Button("Start this phone") { Task { await grid.start() } }
