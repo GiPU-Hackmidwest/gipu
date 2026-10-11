@@ -6,10 +6,10 @@ import { SignInScreen } from './SignInScreen';
 import { AccountPage } from './AccountPage';
 import { sessionStore } from './sessionStorage';
 import { signOut } from './identity';
-import { stopAndSignOut } from './accountLifecycle';
+import { shouldRecoverSession, stopAndSignOut } from './accountLifecycle';
 import { activityLabel, creditLabel, gridCounts, imageLabel, privateSnapshot, visibleImages } from './publicPresentation';
 import { ContributionToggle } from './ContributionToggle';
-import { Api, askNotifications, copyText, errorMessage, isAndroidApp, isDesktop, isMacDesktop, isMobileApp, notify } from './api';
+import { Api, ApiError, askNotifications, copyText, errorMessage, isAndroidApp, isDesktop, isMacDesktop, isMobileApp, notify } from './api';
 import { BrowserWorker } from './browserWorker';
 import { GridScene } from './GridScene';
 import { DesktopWorkerPanel } from './DesktopWorkerPanel';
@@ -56,6 +56,14 @@ export default function App() {
 
 function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError }: { session: Session; onSignOut: () => Promise<void>; incomingLink: GridLink | null; onDismissLink: () => void; linkError: string }) {
   const api = useMemo(() => new Api(session.server, session.token), [session.server, session.token]);
+  const incomingPrompt = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!incomingLink || !incomingPrompt.current) return;
+    const previous = document.activeElement;
+    incomingPrompt.current.focus({ preventScroll: true });
+    incomingPrompt.current.scrollIntoView({ block: 'center', behavior: 'instant' });
+    return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus({ preventScroll: true }); };
+  }, [incomingLink]);
   const [state, setState] = useState<Snapshot | null>(null);
   const [section, setSection] = useState<'create' | 'contribute' | 'activity' | 'developer' | 'account'>('create');
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'instant' }); }, [section]);
@@ -78,7 +86,19 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
   const stopManaged = useRef<(() => Promise<void>) | null>(null);
   const registerManagedStop = useCallback((stop: (() => Promise<void>) | null) => { stopManaged.current = stop; }, []);
   const leavingRef = useRef(false);
+  const dashboardMounted = useRef(false);
+  useEffect(() => { dashboardMounted.current = true; return () => { dashboardMounted.current = false; }; }, []);
+  const expiredRef = useRef(false);
+  const [expired, setExpired] = useState(false);
+  const recoverSession = useRef<() => Promise<void>>(async () => {});
   const [leaving, setLeaving] = useState(false);
+  const recoveryPrompt = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (expired && !leaving && recoveryPrompt.current) {
+      recoveryPrompt.current.focus({ preventScroll: true });
+      recoveryPrompt.current.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, [expired, leaving]);
   const [leaveError, setLeaveError] = useState('');
   const jobSync = useRef(initialJobSync());
   const refreshSequence = useRef(0);
@@ -102,7 +122,18 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
     const request = { revision: jobSync.current.revision, sequence: ++refreshSequence.current };
     let next: Snapshot;
     try { next = privateSnapshot(await api.request<Snapshot>('/state', undefined, undefined, signal)); }
-    catch (error) { if (!snapshotIsCurrent(jobSync.current, request)) return; throw error; }
+    catch (error) {
+      const current = snapshotIsCurrent(jobSync.current, request);
+      if (shouldRecoverSession(error instanceof ApiError ? error.status : undefined, {
+        mounted: dashboardMounted.current, current, expired: expiredRef.current, leaving: leavingRef.current,
+      })) {
+        expiredRef.current = true; setExpired(true);
+        // Keep the controller mounted until every local worker is fenced and storage is cleared.
+        void recoverSession.current();
+      }
+      if (!current) return;
+      throw error;
+    }
     const result = reconcileSnapshot(jobSync.current, request, next);
     if (!result) return;
     jobSync.current = result.sync;
@@ -118,7 +149,7 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
   useEffect(() => {
     let stopped = false; let timer: ReturnType<typeof setTimeout>;
     const controller = new AbortController();
-    const poll = async () => { try { await refresh(controller.signal); } catch (error) { if (!stopped) setError(`Coordinator: ${errorMessage(error)}`); } if (!stopped) timer = setTimeout(poll, 2000); };
+    const poll = async () => { try { await refresh(controller.signal); } catch (error) { if (!stopped) setError(`Coordinator: ${errorMessage(error)}`); } if (!stopped && !expiredRef.current) timer = setTimeout(poll, 2000); };
     void poll();
     return () => { stopped = true; controller.abort(); clearTimeout(timer); };
   }, [refresh]);
@@ -217,10 +248,11 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
     } catch { setLeaveError('Could not finish signing out. Try again.'); }
     finally { leavingRef.current = false; setLeaving(false); }
   }
+  recoverSession.current = leaveAccount;
   const localDevice = state?.devices.find(device => device.id === localId);
   const localSharing = isSharing(localDevice, state?.server_time ?? NaN);
   const titles = { create: 'Create', contribute: 'Contribute', activity: 'Activity', developer: 'Developer options', account: 'Account' };
-  return <>{leaving && <p className="signout-status" role="status">Signing out…</p>}<div className="shell" inert={leaving}>
+  return <>{leaving && <p className="signout-status" role="status">Signing out…</p>}{expired && !leaving && <section ref={recoveryPrompt} tabIndex={-1} className="panel stack" aria-label="Sign in again"><p role="alert">Sign-in expired.</p>{leaveError && <p role="alert">{leaveError}</p>}<button onClick={() => void leaveAccount()}>Return to sign in</button></section>}<div className="shell" inert={leaving || expired}>
     <aside className="sidebar">
       <Brand />
       <nav aria-label="Main navigation">{(['create', 'contribute', 'activity'] as const).map(item => <button key={item} className={section === item ? 'nav-item selected' : 'nav-item'} aria-current={section === item ? 'page' : undefined} onClick={() => setSection(item)}><NavIcon name={item} />{titles[item]}</button>)}</nav>
@@ -231,7 +263,7 @@ function Dashboard({ session, onSignOut, incomingLink, onDismissLink, linkError 
     <main className="workspace">
       <header><span>YOUR WORKSPACE</span><span className="badge">{gridCounts(state) ? `${gridCounts(state)!.connected} connected` : state ? 'Grid count unavailable' : 'Connecting…'}</span></header>
       <div className="intro"><h1>{titles[section]}</h1>{section !== 'developer' && section !== 'account' && <div className="balances"><div><strong>{state?.balance ?? '—'}</strong><span>available</span></div><div><strong>{state?.reserved ?? '—'}</strong><span>reserved</span></div><div><strong>{state?.earned ?? '—'}</strong><span>earned</span></div></div>}</div>
-      {incomingLink && <section className="panel stack" aria-label="Switch account"><h2>Use this link?</h2><p className="grid-address">{incomingLink.server}</p><p>Signs out of this account on this device.</p><small>Keep access with a linked device or login.</small><div className="button-row"><button disabled={leaving} onClick={() => void leaveAccount()}>Sign out and continue</button><button className="secondary" disabled={leaving} onClick={onDismissLink}>Cancel</button></div></section>}
+      {incomingLink && <section ref={incomingPrompt} tabIndex={-1} className="panel stack" aria-label="Switch account"><h2>Use this link?</h2><p className="grid-address">{incomingLink.server}</p><p>Signs out of this account on this device.</p><small>Keep access with a linked device or login.</small><div className="button-row"><button disabled={leaving} onClick={() => void leaveAccount()}>Sign out and continue</button><button className="secondary" disabled={leaving} onClick={onDismissLink}>Cancel</button></div></section>}
       {linkError && <p className="error" role="alert">{linkError}</p>}
       {error && <div className="error banner" role="alert">{error}</div>}{leaveError && <div className="error banner" role="alert">{leaveError}</div>}{section === 'account' && <AccountPage api={api} session={session} username={state?.user.username} supported={state ? state.grid !== undefined : undefined} serverTime={state?.server_time} leaving={leaving} onLeave={leaveAccount} />}
       <div hidden={section !== 'create'}><div className="create-layout"><section className="panel compose-panel"><CreateJob api={api} state={state} onCreated={onJobResponse} developerTarget={requestTarget} /></section><GridScene state={state} onOpen={() => setSection('contribute')} /></div></div>

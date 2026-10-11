@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stopAndSignOut } from '../src/accountLifecycle.ts';
+import { shouldRecoverSession, stopAndSignOut } from '../src/accountLifecycle.ts';
 
 test('logout waits for late enable and every worker Pause before revoke and clear', async () => {
   const calls = []; let release;
@@ -36,4 +36,29 @@ test('revoked credentials clear locally; network or server errors never count as
     if (status === 401) await result; else await assert.rejects(result);
     assert.equal(cleared, status === 401);
   }
+});
+
+
+test('only a current live 401 starts cleanup, never stale responses or duplicate attempts', () => {
+  const live = { mounted: true, current: true, expired: false, leaving: false };
+  assert.equal(shouldRecoverSession(401, live), true);
+  for (const status of [undefined, 403, 404, 500]) assert.equal(shouldRecoverSession(status, live), false);
+  for (const change of [{ mounted: false }, { current: false }, { expired: true }, { leaving: true }]) {
+    assert.equal(shouldRecoverSession(401, { ...live, ...change }), false);
+  }
+});
+
+test('secure deletion failure stays retryable after revoked session cleanup', async () => {
+  let cleared = false; let failDelete = true; let stops = 0;
+  const operations = { legacy: false,
+    stops: [async () => { stops++; throw Object.assign(new Error('Revoked'), { status: 401 }); }],
+    revoke: async () => { throw Object.assign(new Error('Revoked'), { status: 401 }); },
+    clear: async () => { if (failDelete) throw new Error('Keychain unavailable'); cleared = true; },
+  };
+  await assert.rejects(stopAndSignOut(operations), /Keychain unavailable/);
+  assert.equal(cleared, false);
+  failDelete = false;
+  await stopAndSignOut(operations);
+  assert.equal(cleared, true);
+  assert.equal(stops, 2);
 });

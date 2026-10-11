@@ -59,8 +59,8 @@ export function toSession(server: string, result: SessionResponse): Session {
   return { token: result.token, name: result.user.name, server, userId: result.user.id };
 }
 
-export async function joinGrid(client: Client, joinCode: string, name?: string): Promise<Session> {
-  const result = await anonymous(client).request<SessionResponse>('/sessions', { join_code: joinCode, ...(name?.trim() ? { name: name.trim() } : {}) });
+export async function joinGrid(client: Client, joinCode: string, name?: string, clientName?: string): Promise<Session> {
+  const result = await anonymous(client).request<SessionResponse>('/sessions', { join_code: joinCode, ...(name?.trim() ? { name: name.trim() } : {}), ...(clientName ? { client_name: clientName } : {}) });
   return toSession(client.server, result);
 }
 
@@ -76,7 +76,7 @@ export async function signInWithPassword(client: Client, username: string, passw
 
 export function signInWithGridLink(client: Client, link: GridLink, clientName?: string): Promise<Session> {
   if (normalizeServer(client.server) !== link.server) throw new Error('The client does not match the grid in this QR code.');
-  return link.kind === 'join' ? joinGrid(client, link.code) : redeemLinkCode(client, link.code, clientName);
+  return link.kind === 'join' ? joinGrid(client, link.code, undefined, clientName) : redeemLinkCode(client, link.code, clientName);
 }
 
 export function createLinkCode(api: Client): Promise<LinkCode> {
