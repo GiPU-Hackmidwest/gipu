@@ -36,6 +36,11 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Codex · account recovery runtime check (`fix/account-link-handoff`)
+
+- Final integrated frontend tests: 83 passed; TypeScript/production build passed. In a real browser against an isolated local coordinator, a new test account stored the session label `Browser`. Account showed the loopback warning and disabled QR creation until a phone-reachable grid address is supplied. Revoking only that test session caused automatic return to sign-in; reload stayed signed out. This check did not enable contribution or create an image job; worker stop/clear ordering and retry behavior are covered by lifecycle tests.
+- Scope remains minimal: usable QR address, visible/focused incoming-link confirmation, device session labels and safe revoked-session recovery. No hosted state, signing or CI change.
+
 ### 2026-10-11 · Codex · account link handoff polish (`fix/account-link-handoff`)
 
 - **Coordination:** Arboy requested the three UX corrections observed during PR #27 review: phone-unreachable loopback QR addresses, an off-screen incoming-link prompt, and indistinguishable session labels. Root explicitly authorized a backward-compatible optional `clientName` argument in Claude-owned `identity.ts` plus its regression test; the existing `/sessions` contract already accepts `client_name`.
