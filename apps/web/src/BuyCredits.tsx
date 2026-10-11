@@ -39,7 +39,7 @@ export function BuyCredits({ api, payments }: { api: Api; payments?: Payments })
   return <section className="panel stack buy-credits"><h2>Buy credits</h2>
     {payments.available ? <>
       <div className="button-row">{payments.packs.map(pack => <button key={pack.id} className="secondary" disabled={!!busy} onClick={() => void buy(pack)}>{busy === pack.id ? 'Opening…' : `${pack.credits} credits · ${price(pack, payments.currency)}`}</button>)}</div>
-      <small>Test mode: pay with card 4242 4242 4242 4242, any future date and any CVC. Credits are for GiPU only and can’t be cashed out.</small>
+      {/* <div className="disclaimer">Test mode: pay with card 4242 4242 4242 4242, any future date and any CVC. Credits are for GiPU only and can’t be cashed out.</div> */}
     </> : <p>Buying credits isn’t set up on this grid.</p>}
     {message && <p role="status">{message}</p>}{error && <p className="error" role="alert">{error}</p>}
   </section>;
