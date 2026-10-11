@@ -2,6 +2,12 @@
 
 A native SwiftUI app (iOS 17+) for requesting grid images, managing this phone’s contribution, and seeing receipts/activity.
 
+## Native design phase
+
+Arboy with Codex owns SwiftUI and Mac UX; the teammate with Claude owns the separate Tauri Android port. SwiftUI keeps native **Create**, **Contribute** and **Activity** tabs, system forms, Dynamic Type and foreground lifecycle behavior. Short status labels and explicit actions lead; options, technical details and receipt breakdowns use disclosure. See [the shared design guide](../../docs/native-ui-design.md).
+
+Preserve each developer's local signing settings in `PocketGrid.xcodeproj/project.pbxproj`; do not commit personal team or signing changes as project defaults.
+
 ## Run
 
 1. Start the coordinator using the repository README. For a physical phone, bind it to `0.0.0.0:8787` and connect the phone and server to the same trusted Wi-Fi network.
@@ -79,7 +85,14 @@ xcrun swiftc -module-cache-path .build/MacModuleCache \
 .build/notification-ownership
 ```
 
-Verified on October 10, 2026:
+Design-phase verification:
+
+- Final iOS simulator and unsigned arm64 device builds passed. An unsigned device build does not verify installation or behavior on a physical phone.
+- A real local native Mac generation request completed with the iOS simulator performing image finishing. The receipt reserved 10 credits, charged 8 and returned 2.
+- All 17 notification ownership checks passed. The responsive 320-point contribution-dial geometry compiled; this does not establish a full narrow-screen visual audit.
+- Physical-phone end-to-end behavior and comprehensive dark-mode, Dynamic Type and VoiceOver QA remain unverified by this pass.
+
+Historical verification on October 10, 2026, before the native UI redesign:
 
 - The simulator app compiled for arm64 and x86_64, and the unsigned physical-iOS app compiled for arm64, with Xcode 26.2.
 - The pixel test passed all 65,536 pixels and rejected an image exceeding the configured limit.
@@ -90,7 +103,7 @@ Verified on October 10, 2026:
 - The native **Pause** button worked. After explicitly starting again, going Home and reopening PocketGrid left contribution **Paused** with a **Start contributing** button. The notification opt-in button displayed the iOS permission prompt, and its status changed to **Enabled** after allowing notifications.
 - A second real image request completed after notification opt-in. A native PocketGrid banner visibly announced `Native iOS Demo started image_finalize`; the account reached available 86, reserved 0, and earned 2. The tested simulator was left **Paused**.
 
-The sandboxed `simctl` command could not access CoreSimulatorService; ordinary Xcode GUI build/run succeeded without changing security settings. Physical-iPhone testing remains outstanding and needs a connected device plus your Apple development signing team. Simulator validation does not establish physical-device battery, thermal, or mobile-network behavior.
+The sandboxed `simctl` command could not access CoreSimulatorService; ordinary Xcode GUI build/run succeeded without changing security settings. At that historical check, physical-iPhone testing remained outstanding. Project context later recorded physical-phone installation, joining and submission, but not completed physical-phone finishing. Fresh redesigned-app verification needs a connected device plus your Apple development signing team. Simulator validation does not establish physical-device battery, thermal, or mobile-network behavior.
 
 ## Job status checks
 

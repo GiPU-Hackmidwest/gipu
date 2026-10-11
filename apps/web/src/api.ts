@@ -1,8 +1,8 @@
-export const isTauri = '__TAURI_INTERNALS__' in window;
-// The Tauri CLI sets this while building; it separates phones from the Mac shell that runs the Python worker.
-const tauriPlatform = import.meta.env.TAURI_ENV_PLATFORM;
-export const isMobileApp = isTauri && (tauriPlatform === 'android' || tauriPlatform === 'ios');
-export const isDesktop = isTauri && !isMobileApp;
+import { platformFlags } from './platform';
+
+export const { isTauri, isMobileApp, isDesktop, isMacDesktop } = platformFlags(
+  '__TAURI_INTERNALS__' in window, import.meta.env.TAURI_ENV_PLATFORM, navigator.userAgent,
+);
 export class Api {
   constructor(readonly server: string, readonly token: string) {}
   url(path: string) { return `${this.server.replace(/\/$/, '')}${path.startsWith('/api/') ? path : `/api${path}`}`; }

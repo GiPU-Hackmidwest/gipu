@@ -4,6 +4,8 @@ mod worker;
 
 #[cfg(desktop)]
 use tauri::Manager;
+#[cfg(target_os = "macos")]
+use tauri::{webview::DownloadEvent, Emitter};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +36,32 @@ pub fn run() {
         });
 
     builder
+        .setup(|app| {
+            // Preserve the configured window while adding macOS download handling.
+            // WebKit cancels download links unless a handler is registered.
+            for config in &app.config().app.windows {
+                let builder = tauri::WebviewWindowBuilder::from_config(app, config)?;
+                #[cfg(target_os = "macos")]
+                let builder = builder.on_download(|webview, event| {
+                    match event {
+                        DownloadEvent::Requested { url, .. } => {
+                            // Images are fetched with Authorization by the client first.
+                            // No credentials or arbitrary remote URLs reach the downloader.
+                            return url.scheme() == "blob";
+                        }
+                        DownloadEvent::Finished { url, success, .. } => {
+                            let _ = webview.emit("image-download-finished", serde_json::json!({
+                                "url": url.as_str(), "success": success
+                            }));
+                        }
+                        _ => {}
+                    }
+                    true
+                });
+                builder.build()?;
+            }
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("PocketGrid could not start")
         .run(|_app, _event| {

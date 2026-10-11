@@ -18,7 +18,7 @@ export function jobAcknowledgement(job: Pick<Job, 'id' | 'status'>): string {
   const prefix = `Request ${job.id.slice(0, 8)} saved.`;
   if (job.status === 'planning') return `${prefix} Follow planning and cancel if needed under Jobs & results.`;
   if (['completed', 'cancelled', 'failed'].includes(job.status)) return `${prefix} It is ${job.status}; see its result and receipt below.`;
-  return `${prefix} Follow its progress under Jobs & results.`;
+  return `${prefix} Follow its progress below.`;
 }
 
 export function eligibleDevices(devices: Device[], kind: string, pixels: number, now: number): Device[] {

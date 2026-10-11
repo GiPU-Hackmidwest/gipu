@@ -19,6 +19,7 @@ struct HeartbeatReply: Decodable { let device: Device; let lease_valid: Bool }
 struct ClaimReply: Decodable { let task: GridTask?; let device: Device }
 struct GridTask: Decodable, Identifiable {
     let id: String; let job_id: String; let kind: String; let status: String; let variant: Int
+    var device_id: String? = nil
     let width: Int; let height: Int; let price: Int; let lease_id: String?; let source_url: String?; let progress: Double
 }
 struct JobImage: Decodable, Identifiable {

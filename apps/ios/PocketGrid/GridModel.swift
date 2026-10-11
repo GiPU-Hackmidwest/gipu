@@ -32,7 +32,7 @@ private enum SessionStore {
 
 @MainActor
 final class GridModel: ObservableObject {
-    @Published var server = "http://127.0.0.1:8787"
+    @Published var server = "https://66-228-53-243.ip.linodeusercontent.com"
     @Published var name = "My iPhone"
     @Published var joinCode = "pocketgrid-demo"
     @Published var connected = false
