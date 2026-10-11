@@ -188,7 +188,8 @@ class DeviceWorker:
                 if progress_payload:
                     self.api("POST", f"/tasks/{task['id']}/progress", json=progress_payload)
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code in (401, 403, 404, 409):
+                if (exc.response.status_code in (401, 403, 404, 409)
+                        or time.monotonic() - self.last_heartbeat >= 9):
                     self.cancel.set()
                 print(f"Heartbeat: HTTP {exc.response.status_code}", flush=True)
             except httpx.HTTPError:
