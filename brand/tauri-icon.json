@@ -1,0 +1,8 @@
+{
+  "default": "png/gipu-app-icon-1024.png",
+  "bg_color": "#F4F6F8",
+  "android_fg": "png/android-foreground-1024.png",
+  "android_bg": "png/android-background-1024.png",
+  "android_fg_scale": 100,
+  "android_monochrome": "png/android-monochrome-1024.png"
+}

@@ -1,6 +1,6 @@
 # GiPU brand
 
-The product name is **GiPU**: capital G, P and U with a lowercase i. The app, bundle identifiers and docs still say PocketGrid until the rename is agreed across both workstreams.
+The product name is **GiPU**: capital G, P and U with a lowercase i. The Tauri app icons use this mark; the product name, bundle identifiers and docs still say PocketGrid until the rename is agreed across both workstreams.
 
 ## Mark
 
@@ -15,8 +15,10 @@ The icon is a geometric G whose crossbar is an orange **live dot**. The same dot
 | `gipu-app-icon-macos.svg` | macOS tile on Apple's 824px grid with transparent margin |
 | `gipu-favicon.svg` | Browser tab (uses the small mark) |
 | `android/ic_launcher_{foreground,background,monochrome}.svg` | Adaptive icon layers on the 108dp canvas; mark stays inside the 66dp safe zone |
+| `android/ic_launcher_legacy.svg`, `android/ic_launcher_round.svg` | Android 7 launcher icons on the 48dp canvas |
 | `android/ic_stat_gipu.svg` | White 24dp status-bar notification icon |
 | `png/` | Rendered PNGs of the above |
+| `tauri-icon.json` | `tauri icon` manifest: full-bleed default plus Android adaptive layers |
 
 ## Colours
 
@@ -44,3 +46,15 @@ All glyphs share one 56-unit grid with a stroke of 10 and round caps. Change geo
 python3 brand/tools/generate_svgs.py
 brand/tools/export_pngs.sh   # macOS; renders PNGs with AppKit to keep transparency
 ```
+
+## App icons
+
+`apps/web/src-tauri/icons/` and the Android launcher icons in `apps/web/src-tauri/gen/android/app/src/main/res/` are generated from this folder. Do not edit them by hand. After exporting PNGs, run this from a checkout with `apps/web/node_modules` installed:
+
+```sh
+brand/tools/update_app_icons.sh
+```
+
+It runs `tauri icon` with `tauri-icon.json` (iOS, Windows tiles and the Android adaptive and monochrome layers). It then replaces the desktop set (`icon.icns`, `icon.ico`, `icon.png` and the sized PNGs) with the macOS tile, since macOS applies no mask, and draws the Android 7 legacy icons with their own padding. Re-running it gives identical images; `icon.icns` may still differ byte-for-byte because of how it is packed.
+
+The native iOS app in `apps/ios` has no icon set yet; it is not generated here.

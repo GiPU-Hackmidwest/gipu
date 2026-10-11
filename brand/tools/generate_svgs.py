@@ -73,3 +73,8 @@ svg("android/ic_launcher_background.svg", (108, 108), f'<rect width="108" height
 svg("android/ic_launcher_monochrome.svg", (108, 108), placed(mark(INK, INK), 46, 108))
 # Status-bar notification icon: white silhouette, bold weight for 24dp.
 svg("android/ic_stat_gipu.svg", (24, 24), placed(mark("#FFFFFF", "#FFFFFF", bold=True), 20, 24))
+# Legacy launcher icons (Android 7, before adaptive icons) on the 48dp canvas.
+svg("android/ic_launcher_legacy.svg", (48, 48),
+    f'<rect x="2" y="2" width="44" height="44" rx="9" fill="{CANVAS}"/>' + placed(mark(INK), 24, 48))
+svg("android/ic_launcher_round.svg", (48, 48),
+    f'<circle cx="24" cy="24" r="22" fill="{CANVAS}"/>' + placed(mark(INK), 22, 48))

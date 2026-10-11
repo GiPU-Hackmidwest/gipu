@@ -12,3 +12,6 @@ swiftc -O tools/svg2png.swift -o "$BIN"
 "$BIN" gipu-mark.svg png/gipu-mark-512.png 512
 "$BIN" gipu-wordmark.svg png/gipu-wordmark-1200.png 1200
 "$BIN" gipu-wordmark-on-dark.svg png/gipu-wordmark-on-dark-1200.png 1200
+for l in foreground background monochrome; do
+  "$BIN" android/ic_launcher_$l.svg png/android-$l-1024.png 1024
+done
