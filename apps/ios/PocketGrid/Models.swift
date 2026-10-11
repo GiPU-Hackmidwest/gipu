@@ -33,6 +33,15 @@ struct GridJob: Decodable, Identifiable {
 }
 struct GridEvent: Decodable, Identifiable {
     let id: Int; let kind: String; let message: String; let created_at: Double; let device_id: String?
+    let user_id: String?
+
+    func shouldNotify(userID: String, deviceID: String) -> Bool {
+        guard ["task_started", "credits_earned", "job_completed"].contains(kind),
+              device_id == nil || device_id == deviceID else { return false }
+        // Requesters also receive other contributors' earning events in activity.
+        // Only an explicit recipient match makes this a personal earnings alert.
+        return kind != "credits_earned" || (!userID.isEmpty && user_id == userID)
+    }
 }
 struct AgentStatus: Decodable { let mode: String; let available: Bool }
 struct Snapshot: Decodable {

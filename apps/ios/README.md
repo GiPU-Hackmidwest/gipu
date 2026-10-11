@@ -70,6 +70,15 @@ xcrun swiftc -module-cache-path .build/MacModuleCache \
 .build/lifecycle-race
 ```
 
+The notification ownership check also runs without a server. Personal earnings require an explicit matching recipient; existing event-kind and device filters remain in place:
+
+```sh
+mkdir -p .build
+xcrun swiftc -module-cache-path .build/MacModuleCache \
+  PocketGrid/Models.swift Tests/NotificationOwnership.swift -o .build/notification-ownership
+.build/notification-ownership
+```
+
 Verified on October 10, 2026:
 
 - The simulator app compiled for arm64 and x86_64, and the unsigned physical-iOS app compiled for arm64, with Xcode 26.2.
