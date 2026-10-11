@@ -26,7 +26,7 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 | C8 | Device counts, no test devices | done (server): `grid` counts live; stale test devices are excluded from counts, no rows deleted | review: anonymous `state.grid` landscape implemented; missing counts remain unavailable |
 | C9 | Logo | review: brand assets and Tauri/Android icons merged #23 | done: in-app marks and native iOS AppIcon; Xcode simulator build passed |
 | C10 | Rename to GiPU | todo: Tauri productName, Android/release names and remaining docs | done: GiPU in-app name and mark; bundle IDs/env names preserved |
-| C11 | Shimmer + notification, no border | review: coordinator accepts both + `verified`; todo: Python/browser finisher after deploy, Android notify | partial: authoritative verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime remains legacy until deploy |
+| C11 | Shimmer + notification, no border | done (server): compatible coordinator deployed; review: Python/browser cutover in separate PR; Android notify pending | partial: verification/shimmer and notifications implemented; tested invisible iOS encoder staged; runtime cutover pending |
 | C12 | Replicable README | done: fresh-clone README #21 | done: reviewed Mac/iOS commands and corrected setup order |
 | C13 | Desktop sidebar | — | done: implemented and checked; iOS interaction check pending |
 | C14 | Remove "About this grid" | — | done: removed on Mac/iOS |
@@ -35,6 +35,12 @@ States: `todo`, `in progress`, `review`, `done`, `blocked`.
 Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. This path replaces the proposed `assets/brand/`; no duplicate asset tree is needed.
 
 ## Log
+
+### 2026-10-11 · Codex · Docker brand build review (PR #28)
+
+- **Coordination:** user-requested review covers the narrow Docker asset fix and this status correction. No deployment or server mutation was performed in this review.
+- The web stage now preserves `apps/web` → `brand/` relative imports, and the final stage copies the resulting dist directory. `.dockerignore` includes the brand assets. A scratch copy of tracked web/brand files in the same relative layout passed TypeScript and production Vite build (`--configLoader runner`, existing dependencies); Git whitespace checks passed. The local Docker daemon was unavailable to the sandbox, so this is not a new container-build claim.
+- Confirmed in Git that `a34aef0` is `7963aca` plus only the Dockerfile fix. The hosted observations below are Claude's deployment-time evidence; this reviewer did not repeat signed-in hosted checks or independently verify current host revision. Compatible deployment unblocks a separately reviewed finisher cutover; it does not mean those clients have switched or that a physical-phone journey passed.
 
 ### 2026-10-11 · Claude · hosted coordinator redeployed (`a34aef0`, branch `fix/docker-brand-assets`)
 
