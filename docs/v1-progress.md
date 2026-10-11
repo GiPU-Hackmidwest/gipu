@@ -36,6 +36,30 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-11 · Claude · hosted deploy of `aace226` and releases v0.2.0 / v0.3.0
+
+- **Hosted coordinator** now runs `aace226` (main: dynamic pricing #34 plus cloud generation #35).
+  - Backed up first to `/root/backups/grid-pre-aace226-2026-10-11-1038.tgz`. The image was built while the old coordinator served; the coordinator was healthy with no log errors.
+  - `/api/health` reports `generation: cloud / akamai/hackathon-image / available`.
+  - Before switching, a throwaway container made one real Akamai call with the server's key: a 384×384 PNG in 1.8 s.
+- **Live check:** a throwaway account (created server-side, so the join code stayed on the server) connected a current worker in `auto` mode, which detected cloud mode. A 384 px request completed in 4 s:
+  - Akamai generation took 1.9 s; the image was finished and verified;
+  - both stages were labelled `cloud akamai/hackathon-image`;
+  - the price locked at 7 (one laptop ready), with receipt `10 = 8 + 1 + 1`.
+
+  Afterwards the test device was paused, the session logged out (then 401), and the local credentials deleted.
+- **GitHub workflow (manual):**
+  - First Android-only run `38126245236` passed in about 8 min.
+  - **v0.2.0** run `38127512308` (both platforms plus draft) passed: Mac job 4 min, Android 8 min. Published with an iPhone note.
+  - **v0.3.0** run `38132736630` at `aace226` passed and was published: https://github.com/pocketgrid-hackmidwest/pocketgrid/releases/tag/v0.3.0
+- **v0.3.0 checks:**
+  - Downloaded files match `SHA256SUMS.txt`, and `hdiutil verify` reports the DMG VALID.
+  - The DMG app is version 0.3.0, and its bundled worker offers `--generator auto|cloud|local`.
+  - The APK is versionCode 3000 / 0.3.0, labelled GiPU.
+  - The APK is **debug-signed** (no Android signing secrets yet).
+- **Not verified:** the v0.3.0 Mac app connecting in cloud mode through its UI; physical phones; a properly signed Android release.
+- **Seen on Sithabo's Mac:** launching downloaded GiPU builds shows a keychain prompt for `dev.pocketgrid.desktop.session`, because each unsigned build has a new code signature and can't silently read the sign-in saved by an earlier build. Fix options: Developer ID signing, or handling a denied keychain read as signed out. The Mac session code was Codex's.
+
 ### 2026-10-11 · Claude · cloud image generation for the demo (branch `feat/cloud-image-generation`)
 
 - **Request (Sithabo):** for demoing, generate images with a large hosted model through the same pipeline instead of a local model, keeping the local path available. FLUX.2 [klein] was investigated first and then dropped at Sithabo's request. Findings:
