@@ -8,7 +8,7 @@
 
 <p align="center"><strong>Create an image. Share the work. Keep control.</strong></p>
 <p align="center">
-  <a href="https://github.com/pocketgrid-hackmidwest/pocketgrid/releases">Download</a> ·
+  <a href="https://github.com/GiPU-Hackmidwest/gipu/releases">Download</a> ·
   <a href="#try-gipu">Try GiPU</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#build-from-source">Build from source</a>
@@ -33,7 +33,7 @@ Phones must be able to reach the grid and keep the app open while finishing work
 
 ## Download
 
-Get the published **Apple-silicon Mac DMG** and **Android APK** from [GitHub Releases](https://github.com/pocketgrid-hackmidwest/pocketgrid/releases). These are prototype installs, outside the app stores:
+Get the published **Apple-silicon Mac DMG** and **Android APK** from [GitHub Releases](https://github.com/GiPU-Hackmidwest/gipu/releases). These are prototype installs, outside the app stores:
 
 | Device | Run GiPU |
 | --- | --- |
@@ -122,8 +122,8 @@ These instructions use a macOS/Linux shell. Downloaded apps do not need the deve
 ## 1. Run a grid on one computer
 
 ```bash
-git clone https://github.com/pocketgrid-hackmidwest/pocketgrid.git
-cd pocketgrid
+git clone https://github.com/GiPU-Hackmidwest/gipu.git
+cd gipu
 cp .env.example .env
 ./scripts/setup.sh
 ./scripts/server.sh
