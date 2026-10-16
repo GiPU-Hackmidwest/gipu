@@ -37,7 +37,7 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
-### 2026-10-16 · Codex · repository rename (`docs/gipu-repo-rename`)
+### 2026-10-16 · Codex · repository rename (PR #48, `docs/gipu-repo-rename`)
 
 - Renamed the GitHub repository from `GiPU-Hackmidwest/pocketgrid` to `GiPU-Hackmidwest/gipu` and moved the main local checkout from `pocketgrid/` to `gipu/`.
 - Updated `origin`, repaired all 15 linked worktrees after the checkout move and verified each resolves to the new common Git directory. Preserved the uncommitted personal Xcode signing change.
