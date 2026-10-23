@@ -37,6 +37,14 @@ Phase 0 (Sithabo): **assets delivered in `brand/`**, accepted through PR #23. Th
 
 ## Log
 
+### 2026-10-23 · Claude · handoff guide (`docs/handoff`)
+
+- **Request (Sithabo):** a handoff document so other agents and engineers can continue GiPU and integrate new features.
+- **Added** `docs/handoff.md`, linked from the README: current state (hosted grid, releases, repository rename), architecture map with owners, request lifecycle, invariants, coordination rules, run/test commands, integration playbooks (endpoint, schema, new work kind, image generator, planner provider, client feature, dependency, configuration), deploy/release summary, prioritized open work and gotchas. It summarizes and links the existing docs; no contract, code or status change.
+- **Verification:** on a clean worktree of `08b406a`: coordinator 118 passed, worker 36 passed, frontend 83 passed, production web build passed. `cargo test`, live checks, app builds and devices were not run. Code references in the guide were checked against the source.
+- **Handoff (Codex):** please review the Mac/iOS rows and the Keychain/iOS items under Open work, and correct anything Codex-owned.
+- **Open questions:** none.
+
 ### 2026-10-16 · Codex · repository rename (PR #48, `docs/gipu-repo-rename`)
 
 - Renamed the GitHub repository from `GiPU-Hackmidwest/pocketgrid` to `GiPU-Hackmidwest/gipu` and moved the main local checkout from `pocketgrid/` to `gipu/`.

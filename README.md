@@ -317,6 +317,7 @@ docs/                 Protocol, release guide, design and verification records
 
 ## Project docs
 
+- [Handoff](docs/handoff.md): start here to continue the work: architecture map, invariants, how to integrate something new and open work.
 - [Project context](docs/project-context.md): background and component boundaries; historical notes retain their stated scope.
 - [Protocol](docs/protocol.md): API, account linking, privacy, dynamic pricing and settlement.
 - [V1 plan](docs/v1-plan.md) and [V1 progress](docs/v1-progress.md): ownership, status and handoffs.
